@@ -1,0 +1,1524 @@
+<template>
+  <div class="exam-management-container">
+    <header class="main-header">
+      <div class="title">考试管理系统</div>
+      <div class="user-info">
+        <span>欢迎，教师</span>
+        <button @click="logout">退出</button>
+      </div>
+    </header>
+
+    <div class="main-content">
+      <!-- 操作按钮区域 -->
+      <div class="action-buttons">
+        <button @click="showCreateExamDialog = true" class="action-btn create-exam-btn">
+           创建考试
+        </button>
+      </div>
+
+      <!-- 考试列表区域 -->
+      <div class="exam-list-section">
+        <h2>考试列表</h2>
+        <div v-if="exams.length === 0" class="no-exams">
+          <p>暂无考试数据</p>
+          <p class="hint">请创建新考试开始使用系统</p>
+        </div>
+        <div v-else class="exam-grid">
+          <div
+            v-for="exam in exams"
+            :key="exam.exam_id"
+            class="exam-card"
+          >
+            <div class="exam-header">
+              <h3 class="exam-title">{{ exam.exam_name }}</h3>
+              <div class="exam-meta">
+                <span class="exam-status" :class="'status-' + (exam.status || 'created')">
+                  {{ getStatusText(exam.status) }}
+                </span>
+                <span class="exam-date">
+                  {{ formatDate(exam.created_at) }}
+                </span>
+              </div>
+              <div class="exam-description" v-if="exam.description">
+                {{ exam.description }}
+              </div>
+            </div>
+
+            <div class="exam-actions">
+              <button @click="manageGrades(exam)" class="exam-action-btn grades-btn">
+                <i class="icon">📊</i>
+                成绩管理
+              </button>
+              <button @click="editExam(exam)" class="exam-action-btn edit-btn">
+                <i class="icon">✏️</i>
+                信息编辑
+              </button>
+              <button @click="confirmDeleteExam(exam)" class="exam-action-btn delete-btn">
+                <i class="icon">🗑️</i>
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 弹窗：创建/编辑考试 -->
+    <div v-if="showCreateExamDialog" class="upload-dialog">
+      <div class="dialog-content">
+        <h3>{{ isEditMode ? '编辑考试' : '创建考试' }}</h3>
+        <label>考试名称：</label>
+        <input v-model="examForm.exam_name" placeholder="请输入考试名称" />
+        <label>考试描述：</label>
+        <textarea v-model="examForm.description" placeholder="请输入考试描述（可选）" rows="3"></textarea>
+        <label>考试日期：</label>
+        <input v-model="examForm.exam_date" type="date" />
+        <label>考试状态：</label>
+        <select v-model="examForm.status">
+          <option value="created">已创建</option>
+          <option value="active">进行中</option>
+          <option value="completed">已完成</option>
+        </select>
+        <div class="dialog-actions">
+          <button @click="saveExam" :disabled="!examForm.exam_name" class="primary-btn">
+            {{ isEditMode ? '保存' : '创建' }}
+          </button>
+          <button @click="closeCreateExamDialog" class="secondary-btn">取消</button>
+        </div>
+        <div v-if="examSaving" class="saving-message">
+          {{ isEditMode ? '保存中...' : '创建中...' }}
+        </div>
+        <div v-if="examMsg" :class="['message', examMsg.includes('成功') ? 'success' : 'error']">
+          {{ examMsg }}
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除确认弹窗 -->
+    <div v-if="showDeleteConfirm" class="upload-dialog">
+      <div class="dialog-content delete-dialog">
+        <h3>⚠️ 确认删除</h3>
+        <div class="delete-warning">
+          <p>您确定要删除考试 <strong>"{{ examToDelete?.exam_name }}"</strong> 吗？</p>
+          <p class="warning-text">删除后将无法恢复，相关的试卷和成绩数据也会被永久删除。</p>
+        </div>
+        <div class="dialog-actions">
+          <button @click="deleteExam" class="danger-btn">确认删除</button>
+          <button @click="closeDeleteConfirm" class="secondary-btn">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 成绩管理弹窗（暂时留空） -->
+    <div v-if="showGradesDialog" class="upload-dialog">
+      <div class="dialog-content">
+        <h3>📊 成绩管理</h3>
+        <div class="grades-placeholder">
+          <p>🚧 成绩管理功能开发中...</p>
+          <p>敬请期待后续功能更新！</p>
+        </div>
+        <div class="dialog-actions">
+          <button @click="closeGradesDialog" class="secondary-btn">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+        
+        <div class="import-description">
+          <p>请上传Excel文件(.xlsx)，文件格式要求：</p>
+          <ul>
+            <li>第一列：学生姓名</li>
+            <li>第二列：座位号</li>
+            <li>第三列：学生ID（可选）</li>
+          </ul>
+        </div>
+        
+        <label>选择Excel文件：</label>
+        <input type="file" @change="onStudentSeatsFileChange" accept=".xlsx" class="file-input" />
+        
+        <div v-if="studentSeatsPreview.length > 0" class="seats-preview">
+          <h4>文件预览：</h4>
+          <div class="seats-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>学生姓名</th>
+                  <th>座位号</th>
+                  <th>学生ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, index) in studentSeatsPreview.slice(0, 5)" :key="index">
+                  <td>{{ row.studentName }}</td>
+                  <td>{{ row.seatNumber }}</td>
+                  <td>{{ row.studentId || '自动生成' }}</td>
+                </tr>
+                <tr v-if="studentSeatsPreview.length > 5">
+                  <td colspan="3" class="more-text">还有{{ studentSeatsPreview.length - 5 }}项...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="preview-summary">
+            <p>共 {{ studentSeatsPreview.length }} 名学生</p>
+          </div>
+        </div>
+        
+        <div class="dialog-actions">
+          <button 
+            @click="importStudentSeatsData" 
+            :disabled="studentSeatsPreview.length === 0">
+            导入座位号
+          </button>
+          <button @click="closeStudentSeatsDialog">取消</button>
+        </div>
+        <div v-if="uploadingSeats">导入中，请稍候...</div>
+        <div v-if="seatsMsg" class="seats-import-msg" :class="{'success-msg': seatsImportSuccess}">
+          {{ seatsMsg }}
+        </div>
+      </div>
+    </div>
+
+    <!-- 弹窗：导入标准答案 -->
+    <div v-if="showStandardAnswersDialog" class="upload-dialog">
+      <div class="dialog-content">
+        <h3>导入标准答案</h3>
+        <p>考试：{{ selectedExam?.exam_name }}</p>
+        
+        <!-- 显示当前已有的参考答案 -->
+        <div v-if="Object.keys(currentReferenceAnswers).length > 0" class="current-answers">
+          <h4>当前已有标准答案 ({{ Object.keys(currentReferenceAnswers).length }}题)</h4>
+          <div class="current-answers-preview">
+            <div v-for="(answer, qNum) in currentReferenceAnswers" :key="qNum" class="current-answer-item">
+              <span class="answer-num">题{{ qNum }}:</span>
+              <span class="answer-text">{{ answer.length > 20 ? answer.substring(0, 20) + '...' : answer }}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="import-options">
+          <div class="import-tab" :class="{active: importTab === 'file'}" @click="importTab = 'file'">
+            文件导入
+          </div>
+          <div class="import-tab" :class="{active: importTab === 'manual'}" @click="importTab = 'manual'">
+            手动输入
+          </div>
+        </div>
+        
+        <!-- 文件导入标签 -->
+        <div v-if="importTab === 'file'" class="file-import">
+          <p class="description">上传Excel文件(.xlsx)，文件格式为两列：<br>题号 | 标准答案</p>
+          <input type="file" @change="onAnswerFileChange" accept=".xlsx" class="file-input" />
+          
+          <div v-if="excelAnswers.length > 0" class="excel-preview">
+            <h4>文件预览：</h4>
+            <div class="excel-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>题号</th>
+                    <th>标准答案</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, index) in excelAnswers.slice(0, 5)" :key="index">
+                    <td>{{ row.questionNumber }}</td>
+                    <td>{{ row.answer }}</td>
+                  </tr>
+                  <tr v-if="excelAnswers.length > 5">
+                    <td colspan="2" class="more-text">还有{{ excelAnswers.length - 5 }}项...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 手动输入标签 -->
+        <div v-if="importTab === 'manual'" class="standard-answers-form">
+          <div v-for="(answer, index) in standardAnswersArray" :key="index" class="answer-item">
+            <div class="answer-number">题目 {{ index + 1 }}</div>
+            <textarea 
+              v-model="standardAnswersArray[index].answer" 
+              placeholder="输入标准答案"
+              rows="3"
+            ></textarea>
+          </div>
+          <div class="add-question">
+            <button @click="addStandardAnswer">+ 添加题目</button>
+          </div>
+        </div>
+        
+        <div class="dialog-actions">
+          <button 
+            @click="importStandardAnswers" 
+            :disabled="!hasValidAnswers && excelAnswers.length === 0">
+            保存答案
+          </button>
+          <button @click="showStandardAnswersDialog = false">取消</button>
+        </div>
+        <div v-if="uploadingAnswers">处理中，请稍候...</div>
+        <div v-if="standardAnswersMsg" class="answer-import-msg" :class="{'success-msg': importSuccess}">
+          {{ standardAnswersMsg }}
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import axios from 'axios'
+
+const router = useRouter()
+const exams = ref([])
+
+// 考试创建/编辑相关
+const showCreateExamDialog = ref(false)
+const isEditMode = ref(false)
+const examSaving = ref(false)
+const examMsg = ref('')
+const examForm = ref({
+  exam_id: null,
+  exam_name: '',
+  description: '',
+  exam_date: '',
+  status: 'created'
+})
+
+// 删除确认相关
+const showDeleteConfirm = ref(false)
+const examToDelete = ref(null)
+const deletingExam = ref(false)
+const deleteMsg = ref('')
+
+// 成绩管理相关
+const showGradesDialog = ref(false)
+
+// 格式化日期
+const formatDate = (dateString) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  return date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+}
+
+// 获取状态文本
+const getStatusText = (status) => {
+  const statusMap = {
+    'created': '已创建',
+    'active': '进行中',
+    'completed': '已完成'
+  }
+  return statusMap[status] || '已创建'
+}
+
+// 成绩管理函数
+const manageGrades = (exam) => {
+  selectedExam.value = exam
+  showGradesDialog.value = true
+}
+
+const closeGradesDialog = () => {
+  showGradesDialog.value = false
+}
+
+// 确认删除考试
+const confirmDeleteExam = (exam) => {
+  examToDelete.value = exam
+  showDeleteConfirm.value = true
+  deleteMsg.value = ''
+}
+
+const closeDeleteConfirm = () => {
+  showDeleteConfirm.value = false
+  examToDelete.value = null
+  deleteMsg.value = ''
+}
+
+const deleteExam = async () => {
+  if (!examToDelete.value) return
+
+  try {
+    const response = await axios.delete(`http://localhost:8000/api/exams/${examToDelete.value.exam_id}`)
+
+    if (response.data.code === 1) {
+      // 删除成功，移除本地数组中的考试
+      const index = exams.value.findIndex(exam => exam.exam_id === examToDelete.value.exam_id)
+      if (index > -1) {
+        exams.value.splice(index, 1)
+      }
+
+      // 如果删除的是当前选中的考试，清除选中状态
+      if (selectedExam.value && selectedExam.value.exam_id === examToDelete.value.exam_id) {
+        selectedExam.value = null
+        showStudentDialog.value = false
+      }
+
+      alert('考试删除成功！')
+    } else {
+      alert('删除失败：' + (response.data.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('删除考试失败:', error)
+    alert('删除失败，请检查网络连接')
+  } finally {
+    closeDeleteConfirm()
+  }
+}
+
+// 修改批量AI评分函数
+const batchGradePapers = async () => {
+  if (!selectedExam.value || !papers.value.length) return
+  
+  if (!confirm('确定要对所有未评分试卷进行AI批量评分吗？')) {
+    return
+  }
+  
+  try {
+    // 获取所有未评分或部分评分的试卷
+    const ungradedPapers = papers.value.filter(p => 
+      p.gradingStatus === 'ungraded' || p.gradingStatus === 'partial'
+    )
+    
+    if (!ungradedPapers.length) {
+      alert('没有需要评分的试卷')
+      return
+    }
+    
+    // 获取标准答案 - 使用新的API
+    const refAnswersRes = await axios.get(`http://localhost:8000/api/reference-answers/${selectedExam.value.exam_id}`)
+    const referenceAnswers = refAnswersRes.data.data || {}
+    
+    if (Object.keys(referenceAnswers).length === 0) {
+      alert('该考试还没有标准答案，请先导入标准答案')
+      return
+    }
+    
+    alert(`开始对 ${ungradedPapers.length} 份试卷进行AI评分，可能需要一些时间，请耐心等待`)
+    
+    let processedCount = 0
+    let successCount = 0
+    
+    // 显示进度
+    const progressMsg = document.createElement('div')
+    progressMsg.style.position = 'fixed'
+    progressMsg.style.top = '50%'
+    progressMsg.style.left = '50%'
+    progressMsg.style.transform = 'translate(-50%, -50%)'
+    progressMsg.style.background = 'white'
+    progressMsg.style.padding = '20px'
+    progressMsg.style.borderRadius = '8px'
+    progressMsg.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)'
+    progressMsg.style.zIndex = '9999'
+    progressMsg.innerHTML = `正在评分: 0/${ungradedPapers.length}`
+    document.body.appendChild(progressMsg)
+    
+    // 逐一对试卷进行评分
+    for (const paper of ungradedPapers) {
+      try {
+        // 获取试卷详情
+        const detailsRes = await axios.get(`http://localhost:8000/api/paper-details/${paper.paper_id}`)
+        const details = detailsRes.data.data || []
+        
+        if (!details.length) {
+          processedCount++
+          progressMsg.innerHTML = `正在评分: ${processedCount}/${ungradedPapers.length}`
+          continue
+        }
+        
+        // 准备学生答案和题目信息
+        const studentAnswers = {}
+        const questionTypes = {}
+        const totalScores = {}
+        
+        details.forEach(detail => {
+          if (detail.answer_text && detail.question_number) {
+            studentAnswers[detail.question_number] = detail.answer_text
+            totalScores[detail.question_number] = detail.total_score
+            
+            // 简单推断题目类型
+            if (detail.total_score <= 4) {
+              questionTypes[detail.question_number] = 'choice'
+            } else if (detail.total_score <= 5) {
+              questionTypes[detail.question_number] = 'blank'
+            } else {
+              questionTypes[detail.question_number] = 'essay'
+            }
+          }
+        })
+        
+        // 如果有答案需要评分
+        if (Object.keys(studentAnswers).length > 0) {
+          // 调用后端AI评分API
+          const gradeRes = await axios.post('http://localhost:8000/api/ai-grade', {
+            exam_id: selectedExam.value.exam_id,
+            paper_id: paper.paper_id,
+            student_answers: studentAnswers,
+            reference_answers: referenceAnswers,
+            question_types: questionTypes,
+            total_scores: totalScores
+          })
+          
+          // 如果评分成功
+          if (gradeRes.data.code === 1 && gradeRes.data.data) {
+            // 提交评分结果
+            await axios.post('http://localhost:8000/api/papers/grade', {
+              paper_id: paper.paper_id,
+              scores: gradeRes.data.data
+            })
+            successCount++
+          }
+        }
+        
+        processedCount++
+        progressMsg.innerHTML = `正在评分: ${processedCount}/${ungradedPapers.length}`
+      } catch (error) {
+        console.error(`试卷评分失败 (paper_id=${paper.paper_id}):`, error)
+        processedCount++
+        progressMsg.innerHTML = `正在评分: ${processedCount}/${ungradedPapers.length}`
+      }
+    }
+    
+    // 移除进度提示
+    document.body.removeChild(progressMsg)
+    
+    alert(`AI评分完成！成功评分 ${successCount}/${ungradedPapers.length} 份试卷。`)
+    
+    // 重新加载试卷列表以更新状态
+    selectExam(selectedExam.value)
+    
+  } catch (e) {
+    console.error('AI评分失败', e)
+    alert('AI评分过程中出错，请重试')
+  }
+}
+
+// 判卷状态获取
+const fetchGradingStatus = async (paper) => {
+  try {
+    const res = await axios.get(`http://localhost:8000/api/paper-details/${paper.paper_id}`)
+    const details = res.data.data || []
+    if (details.length === 0) {
+      paper.gradingStatus = 'ungraded'
+      return
+    }
+    const scores = details.map(d => d.score)
+    if (scores.every(s => s === null || s === undefined)) {
+      paper.gradingStatus = 'ungraded'
+    } else if (scores.every(s => s !== null && s !== undefined)) {
+      paper.gradingStatus = 'graded'
+    } else {
+      paper.gradingStatus = 'partial'
+    }
+  } catch (e) {
+    console.error('获取判卷状态失败', e)
+    paper.gradingStatus = 'ungraded'
+  }
+}
+
+const fetchExamProgress = async (examId) => {
+  try {
+    const res = await axios.get(`http://localhost:8000/api/papers/${examId}`)
+    const papers = res.data.data || []
+    let graded = 0
+    let total = papers.length
+    
+    // 并发获取每份试卷的判卷状态
+    await Promise.all(
+      papers.map(async (paper) => {
+        const detailRes = await axios.get(`http://localhost:8000/api/paper-details/${paper.paper_id}`)
+        const details = detailRes.data.data || []
+        if (
+          details.length > 0 &&
+          details.every(d => d.score !== null && d.score !== undefined)
+        ) {
+          graded += 1
+        }
+      })
+    )
+    examProgressMap.value[examId] = { graded, total }
+  } catch (e) {
+    console.error('获取考试进度失败', e)
+    examProgressMap.value[examId] = { graded: 0, total: 0 }
+  }
+}
+
+// 选择考试
+const selectExam = (exam) => {
+  selectedExam.value = exam
+  // 记录选择的考试信息
+  localStorage.setItem('lastExamId', exam.exam_id)
+  localStorage.setItem('lastExamName', exam.exam_name)
+}
+
+// 查看试卷列表
+const viewPapers = (exam) => {
+  // 跳转到试卷列表页面
+  router.push({ 
+    path: `/exam/${exam.exam_id}/papers`, 
+    query: { examName: exam.exam_name } 
+  })
+}
+
+// 选择考试并准备导入答案
+const selectExamForAnswers = (exam) => {
+  selectedExam.value = exam
+  onShowStandardAnswersDialog()
+}
+
+// 创建考试
+const createExam = () => {
+  isEditMode.value = false
+  examForm.value = {
+    exam_id: null,
+    exam_name: '',
+    description: '',
+    exam_date: '',
+    status: 'draft'
+  }
+  showCreateExamDialog.value = true
+}
+
+// 编辑考试
+const editExam = (exam) => {
+  isEditMode.value = true
+  examForm.value = {
+    exam_id: exam.exam_id,
+    exam_name: exam.exam_name,
+    description: exam.description || '',
+    exam_date: exam.exam_date || '',
+    status: exam.status || 'draft'
+  }
+  showCreateExamDialog.value = true
+}
+
+// 保存考试（创建或更新）
+const saveExam = async () => {
+  if (!examForm.value.exam_name.trim()) {
+    examMsg.value = '请输入考试名称'
+    return
+  }
+  
+  examSaving.value = true
+  examMsg.value = ''
+  
+  try {
+    let response
+    
+    if (isEditMode.value) {
+      // 更新考试
+      response = await axios.put(`http://localhost:8000/api/exams/${examForm.value.exam_id}`, {
+        exam_name: examForm.value.exam_name,
+        description: examForm.value.description,
+        exam_date: examForm.value.exam_date,
+        status: examForm.value.status
+      })
+    } else {
+      // 创建新考试
+      response = await axios.post('http://localhost:8000/api/exams', {
+        exam_name: examForm.value.exam_name,
+        description: examForm.value.description,
+        exam_date: examForm.value.exam_date,
+        status: examForm.value.status
+      })
+    }
+    
+    if (response.data.code === 1) {
+      examMsg.value = isEditMode.value ? '考试更新成功！' : '考试创建成功！'
+      
+      // 延迟关闭弹窗并刷新列表
+      setTimeout(() => {
+        closeCreateExamDialog()
+        loadExams()
+      }, 1500)
+    } else {
+      examMsg.value = response.data.msg || (isEditMode.value ? '更新失败' : '创建失败')
+      examSaving.value = false
+    }
+  } catch (e) {
+    console.error('保存考试失败', e)
+    examMsg.value = isEditMode.value ? '更新失败，请重试' : '创建失败，请重试'
+    examSaving.value = false
+  }
+}
+
+// 删除考试
+const deleteExam = async (exam) => {
+  if (!confirm(`确定要删除考试 "${exam.exam_name}" 吗？\n删除后将无法恢复，相关的试卷和成绩数据也会被删除。`)) {
+    return
+  }
+  
+  try {
+    const response = await axios.delete(`http://localhost:8000/api/exams/${exam.exam_id}`)
+    
+    if (response.data.code === 1) {
+      alert('考试删除成功！')
+      // 如果删除的是当前选中的考试，清除选中状态
+      if (selectedExam.value && selectedExam.value.exam_id === exam.exam_id) {
+        selectedExam.value = null
+      }
+      // 重新加载考试列表
+      loadExams()
+    } else {
+      alert(response.data.msg || '删除失败，请重试')
+    }
+  } catch (e) {
+    console.error('删除考试失败', e)
+    alert('删除失败，请重试')
+  }
+}
+
+// 关闭创建/编辑考试弹窗
+const closeCreateExamDialog = () => {
+  showCreateExamDialog.value = false
+  isEditMode.value = false
+  examSaving.value = false
+  examMsg.value = ''
+  examForm.value = {
+    exam_id: null,
+    exam_name: '',
+    description: '',
+    exam_date: '',
+    status: 'draft'
+  }
+}
+
+// 导入学生座位号
+const importStudentSeats = (exam) => {
+  selectedExam.value = exam
+  showStudentSeatsDialog.value = true
+  // 重置状态
+  studentSeatsPreview.value = []
+  seatsMsg.value = ''
+  seatsImportSuccess.value = false
+}
+
+// 处理学生座位号文件上传
+const onStudentSeatsFileChange = (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  
+  const reader = new FileReader()
+  reader.onload = (event) => {
+    try {
+      const data = new Uint8Array(event.target.result)
+      const workbook = XLSX.read(data, { type: 'array' })
+      
+      // 获取第一个工作表
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+      
+      // 转换为JSON
+      const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: ['studentName', 'seatNumber', 'studentId'] })
+      
+      // 移除表头（如果存在）
+      if (jsonData.length > 0 && 
+          (typeof jsonData[0].studentName === 'string' && 
+           typeof jsonData[0].seatNumber === 'string')) {
+        jsonData.shift()
+      }
+      
+      // 过滤和格式化数据
+      studentSeatsPreview.value = jsonData
+        .filter(row => row.studentName !== undefined && row.seatNumber !== undefined)
+        .map(row => ({
+          studentName: String(row.studentName).trim(),
+          seatNumber: String(row.seatNumber).trim(),
+          studentId: row.studentId ? String(row.studentId).trim() : null
+        }))
+        .filter(row => row.studentName !== '' && row.seatNumber !== '')
+      
+      if (studentSeatsPreview.value.length === 0) {
+        seatsMsg.value = '未找到有效的学生座位号数据，请检查Excel格式'
+        seatsImportSuccess.value = false
+      }
+    } catch (err) {
+      console.error('解析Excel文件失败:', err)
+      seatsMsg.value = '解析文件失败，请确保文件格式正确'
+      seatsImportSuccess.value = false
+      studentSeatsPreview.value = []
+    }
+  }
+  
+  reader.readAsArrayBuffer(file)
+}
+
+// 导入学生座位号数据
+const importStudentSeatsData = async () => {
+  if (!selectedExam.value || studentSeatsPreview.value.length === 0) return
+  
+  uploadingSeats.value = true
+  seatsMsg.value = ''
+  
+  try {
+    const response = await axios.post('http://localhost:8000/api/student-seats/import', {
+      exam_id: selectedExam.value.exam_id,
+      students: studentSeatsPreview.value
+    })
+    
+    if (response.data.code === 1) {
+      seatsMsg.value = `成功导入 ${studentSeatsPreview.value.length} 名学生的座位号信息！`
+      seatsImportSuccess.value = true
+      
+      // 2秒后关闭弹窗
+      setTimeout(() => {
+        closeStudentSeatsDialog()
+      }, 2000)
+    } else {
+      seatsMsg.value = response.data.msg || '导入失败'
+      seatsImportSuccess.value = false
+      uploadingSeats.value = false
+    }
+  } catch (e) {
+    console.error('导入学生座位号失败', e)
+    seatsMsg.value = '导入失败，请重试'
+    seatsImportSuccess.value = false
+    uploadingSeats.value = false
+  }
+}
+
+// 关闭学生座位号弹窗
+const closeStudentSeatsDialog = () => {
+  showStudentSeatsDialog.value = false
+  studentSeatsPreview.value = []
+  uploadingSeats.value = false
+  seatsMsg.value = ''
+  seatsImportSuccess.value = false
+}
+
+
+
+const logout = () => {
+  localStorage.removeItem('username')
+  router.push('/login')
+}
+
+
+
+const onFileChange = (e) => {
+  uploadFile.value = e.target.files[0]
+}
+
+const handleUpload = async () => {
+  if (!uploadExamName.value || !uploadFile.value) return
+  uploading.value = true
+  uploadMsg.value = ''
+  
+  try {
+    const formData = new FormData()
+    formData.append('exam_name', uploadExamName.value)
+    formData.append('video', uploadFile.value)
+    
+    // 使用新的API端点
+    const response = await axios.post('http://localhost:8000/api/upload-video', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    
+    if (response.data.code === 1) {
+      uploadMsg.value = '上传成功，正在处理！请稍后刷新页面查看新考试。'
+      
+      // 可选：自动刷新考试列表
+      setTimeout(() => {
+        showUploadDialog.value = false
+        uploadExamName.value = ''
+        uploadFile.value = null
+        uploading.value = false
+        uploadMsg.value = ''
+        // 重新加载考试列表
+        loadExams()
+      }, 2000)
+    } else {
+      uploadMsg.value = response.data.msg || '上传失败，请重试'
+      uploading.value = false
+    }
+  } catch (e) {
+    console.error('上传失败', e)
+    uploadMsg.value = '上传失败，请重试'
+    uploading.value = false
+  }
+}
+
+const loadExams = async () => {
+  try {
+    const res = await axios.get('http://localhost:8000/api/exams')
+    exams.value = res.data.data || []
+    
+    // 加载每个考试的进度
+    for (const exam of exams.value) {
+      fetchExamProgress(exam.exam_id)
+    }
+  } catch (e) {
+    console.error('获取考试列表失败', e)
+  }
+}
+
+const loadCurrentReferenceAnswers = async () => {
+  if (!selectedExam.value) return
+  
+  try {
+    const response = await axios.get(`http://localhost:8000/api/reference-answers/${selectedExam.value.exam_id}`)
+    if (response.data.code === 1) {
+      currentReferenceAnswers.value = response.data.data || {}
+      
+      // 如果已经有参考答案，预填充到表单中
+      if (Object.keys(currentReferenceAnswers.value).length > 0) {
+        // 更新手动输入表单
+        standardAnswersArray.value = []
+        for (const [qNum, answer] of Object.entries(currentReferenceAnswers.value)) {
+          standardAnswersArray.value.push({
+            questionNumber: parseInt(qNum),
+            answer: answer
+          })
+        }
+        // 确保题号排序
+        standardAnswersArray.value.sort((a, b) => a.questionNumber - b.questionNumber)
+      }
+    }
+  } catch (e) {
+    console.error('获取当前参考答案失败', e)
+    currentReferenceAnswers.value = {}
+  }
+}
+
+const onShowStandardAnswersDialog = async () => {
+  if (!selectedExam.value) {
+    alert('请先选择一个考试')
+    return
+  }
+  showStandardAnswersDialog.value = true
+  
+  // 重置状态
+  standardAnswersMsg.value = ''
+  importSuccess.value = false
+  excelAnswers.value = []
+  
+  // 加载当前参考答案
+  await loadCurrentReferenceAnswers()
+}
+
+onMounted(async () => {
+  if (!localStorage.getItem('username')) {
+    router.push('/login')
+    return
+  }
+  
+  await loadExams()
+})
+</script>
+
+<style scoped>
+.exam-management-container {
+  min-height: 100vh;
+  width: 100vw;
+  background: transparent;
+  position: relative;
+}
+
+.exam-management-container::before {
+  content: "";
+  background-image: url('/4.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  opacity: 0.9;
+}
+
+.main-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(35, 57, 93, 0.9);
+  color: #fff;
+  padding: 0 32px;
+  height: 56px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.title {
+  font-size: 1.8rem;
+  font-weight: bold;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.user-info button {
+  background: #f39c12;
+  color: #fff;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.main-content {
+  padding: 32px;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 32px;
+  justify-content: center;
+}
+
+.action-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.import-video-btn {
+  background: #10b981;
+  color: white;
+}
+
+.import-video-btn:hover {
+  background: #059669;
+  transform: translateY(-2px);
+}
+
+.create-exam-btn {
+  background: #3b82f6;
+  color: white;
+}
+
+.create-exam-btn:hover {
+  background: #2563eb;
+  transform: translateY(-2px);
+}
+
+
+
+.exam-list-section {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.exam-list-section h2 {
+  text-align: center;
+  margin-bottom: 24px;
+  color: #374151;
+  font-size: 1.8rem;
+}
+
+.no-exams {
+  text-align: center;
+  padding: 60px 20px;
+  color: #6b7280;
+}
+
+.no-exams p {
+  font-size: 1.2rem;
+  margin-bottom: 8px;
+}
+
+.hint {
+  font-size: 1rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.exam-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.exam-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid transparent;
+}
+
+.exam-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.exam-card.selected {
+  border-color: #3b82f6;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2);
+}
+
+.exam-header {
+  margin-bottom: 16px;
+}
+
+.exam-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.exam-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progress-text {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #059669);
+  transition: width 0.3s ease;
+}
+
+.exam-actions {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  gap: 4px;
+}
+
+.exam-action-btn {
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.view-papers-btn {
+  background: #3b82f6;
+  color: white;
+}
+
+.view-papers-btn:hover {
+  background: #2563eb;
+}
+
+.primary-action {
+  font-weight: 600;
+}
+
+.exam-action-btn.import-answers-btn {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.exam-action-btn.import-answers-btn:hover {
+  background: #e5e7eb;
+}
+
+.import-seats-btn {
+  background: #8b5cf6;
+  color: white;
+}
+
+.import-seats-btn:hover {
+  background: #7c3aed;
+}
+
+.edit-exam-btn {
+  background: #f59e0b;
+  color: white;
+}
+
+.edit-exam-btn:hover {
+  background: #d97706;
+}
+
+.delete-exam-btn {
+  background: #ef4444;
+  color: white;
+}
+
+.delete-exam-btn:hover {
+  background: #dc2626;
+}
+
+
+
+.upload-dialog {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+
+.dialog-content {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 32px 24px;
+  border-radius: 8px;
+  min-width: 320px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+
+.dialog-content h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.dialog-content label {
+  display: block;
+  margin: 8px 0;
+  font-weight: 500;
+}
+
+.dialog-content input,
+.dialog-content textarea,
+.dialog-content select {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 16px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.dialog-content textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.dialog-content select {
+  background: white;
+  cursor: pointer;
+}
+
+.dialog-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 12px;
+}
+
+.dialog-actions button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dialog-actions button:first-child {
+  background: #3b82f6;
+  color: white;
+}
+
+.dialog-actions button:last-child {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.import-options {
+  display: flex;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.import-tab {
+  padding: 8px 16px;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+}
+
+.import-tab.active {
+  border-bottom: 3px solid #3b82f6;
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.file-import {
+  margin-bottom: 20px;
+}
+
+.description {
+  font-size: 0.9rem;
+  color: #6b7280;
+  margin-bottom: 10px;
+}
+
+.file-input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px dashed #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+}
+
+.excel-preview {
+  margin-top: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.excel-preview h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.excel-table {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.excel-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.excel-table th {
+  background: #f3f4f6;
+  padding: 8px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.excel-table td {
+  padding: 8px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.85rem;
+}
+
+.more-text {
+  text-align: center;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.answer-import-msg {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.success-msg {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.current-answers {
+  margin-bottom: 20px;
+}
+
+.current-answers-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.current-answer-item {
+  background: #f3f4f6;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.answer-num {
+  font-weight: 600;
+}
+
+.answer-text {
+  margin-left: 8px;
+}
+
+.standard-answers-form {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.answer-item {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+}
+
+.answer-number {
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.add-question {
+  text-align: center;
+  margin-top: 16px;
+}
+
+.add-question button {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.add-question button:hover {
+  background: #059669;
+}
+
+.import-description {
+  background: #f0f9ff;
+  border: 1px solid #0ea5e9;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.import-description p {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  color: #0c4a6e;
+}
+
+.import-description ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.import-description li {
+  margin-bottom: 4px;
+  color: #0369a1;
+}
+
+.seats-preview {
+  margin-top: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.seats-preview h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.seats-table {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.seats-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.seats-table th {
+  background: #f3f4f6;
+  padding: 8px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.seats-table td {
+  padding: 8px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.85rem;
+}
+
+.preview-summary {
+  margin-top: 8px;
+  padding: 8px;
+  background: #f0f9ff;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.preview-summary p {
+  margin: 0;
+  font-weight: 600;
+  color: #0369a1;
+}
+
+.seats-import-msg {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .main-content {
+    padding: 16px;
+  }
+  
+  .action-buttons {
+    flex-direction: column;
+  }
+  
+  .action-btn {
+    width: 100%;
+  }
+
+  .exam-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .exam-actions {
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+  
+  .exam-action-btn {
+    font-size: 0.75rem;
+    padding: 4px 6px;
+  }
+  
+  .dialog-content {
+    margin: 10px;
+    padding: 20px 16px;
+    min-width: auto;
+  }
+}
+</style>
