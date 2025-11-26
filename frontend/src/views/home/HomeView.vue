@@ -253,7 +253,7 @@ const handleUpload = async () => {
     const formData = new FormData()
     formData.append('exam_name', uploadExamName.value)
     formData.append('video', uploadFile.value)
-    await axios.post('http://localhost:8001/api/exam/upload', formData, {
+    await axios.post('http://localhost:8001/api/upload-video', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     uploadMsg.value = '上传成功，正在处理！请稍后刷新页面查看新考试。'

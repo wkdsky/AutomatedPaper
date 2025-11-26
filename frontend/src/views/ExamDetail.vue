@@ -70,7 +70,7 @@
             </div>
           </el-tab-pane>
 
-          <!-- 学生作答管理 -->
+          <!-- 学生作答管理-->
           <el-tab-pane label="学生作答管理" name="images">
             <div class="tab-content">
               <AnswerManager 
@@ -79,6 +79,7 @@
               />
             </div>
           </el-tab-pane>
+          
 
           <!-- AI阅卷 -->
           <el-tab-pane label="AI阅卷" name="ai-grading">
@@ -91,6 +92,7 @@
               />
             </div>
           </el-tab-pane>
+          
 
           <!-- 成绩管理 -->
           <el-tab-pane label="成绩管理" name="scores">
@@ -102,6 +104,7 @@
               />
             </div>
           </el-tab-pane>
+          
         </el-tabs>
       </el-card>
     </div>
@@ -157,7 +160,7 @@ const exam = ref(null)
 const activeTab = ref('students')
 const examStudents = ref([])
 const questions = ref([])
-const scores = ref([])
+// const scores = ref([])
 
 const showAddStudentDialog = ref(false)
 const selectedStudentId = ref('')
@@ -207,14 +210,14 @@ const handleQuestionsUpdate = (newQuestions) => {
 
 
 // 获取成绩列表
-const fetchScores = async () => {
-  try {
-    const response = await axios.get(`http://localhost:8001/api/exams/${examId}/scores`)
-    scores.value = response.data.data || []
-  } catch (error) {
-    console.error('获取成绩列表失败:', error)
-  }
-}
+// const fetchScores = async () => {
+//   try {
+//     const response = await axios.get(`http://localhost:8001/api/exams/${examId}/scores`)
+//     scores.value = response.data.data || []
+//   } catch (error) {
+//     console.error('获取成绩列表失败:', error)
+//   }
+// }
 
 
 
@@ -341,16 +344,9 @@ const exportScores = () => {
 }
 
 
-
-
-
-
-
-
-
 onMounted(async () => {
   await fetchExam()
-  fetchScores()
+  // fetchScores()
 })
 </script>
 
