@@ -1,9 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
-import Background from './components/Background.vue'
 
-const mode = ref('byQuestion') // 'byQuestion' or 'byStudent'
 const questions = ref([
   { id: 1, title: '主观题1' },
   { id: 2, title: '主观题2' },
