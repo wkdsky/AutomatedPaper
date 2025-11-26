@@ -2,13 +2,32 @@
   <div class="question-manager">
     <div class="tab-actions">
       <el-button type="primary" @click="openAddQuestionDialog">
+        <el-icon><Plus /></el-icon>
         添加题目
       </el-button>
       <el-button type="success" @click="showImportQuestionDialog = true">
         <el-icon><Upload /></el-icon>
         从文件导入题目
       </el-button>
-      <el-button @click="fetchQuestions">刷新</el-button>
+      <el-button type="info" @click="showAddExistingDialog = true">
+        <el-icon><DocumentCopy /></el-icon>
+        添加已录入题目
+      </el-button>
+      <el-button @click="fetchQuestions">
+        <el-icon><Refresh /></el-icon>
+        刷新
+      </el-button>
+    </div>
+
+    <div style="margin-bottom: 15px;">
+      <el-button 
+        type="danger" 
+        @click="removeBatchQuestions" 
+        :disabled="selectedExamQuestions.length === 0"
+      >
+        <el-icon><Delete /></el-icon>
+        批量移除
+      </el-button>
     </div>
 
     <el-table 
@@ -16,14 +35,12 @@
       :data="questions" 
       style="width: 100%"
       row-key="id"
+      @selection-change="handleExamQuestionSelectionChange"
       @row-dblclick="handleQuestionDblClick"
       class="question-table"
     >
-      <el-table-column label="题号" width="80">
-        <template #default="scope">
-          <span>{{ scope.row.question_order || questions.indexOf(scope.row) + 1 }}</span>
-        </template>
-      </el-table-column>
+      <el-table-column type="selection" width="55" />
+      <el-table-column type="index" label="序号" width="80" />
       <el-table-column label="题型" width="100">
         <template #default="scope">
           <el-tag :type="getQuestionTypeColor(scope.row.type)">
@@ -56,7 +73,7 @@
       </el-table-column>
     </el-table>
     <div style="margin-top: 10px; font-size: 12px; color: #909399;">
-      提示：双击任意行可编辑题目。拖动 <el-icon><Rank /></el-icon> 可调整题目顺序（题号会自动更新）。
+      提示：双击任意行可编辑题目。拖动 <el-icon><Rank /></el-icon> 可调整题目顺序（序号会自动更新）。
     </div>
 
     <!-- 题目编辑/添加对话框 -->
@@ -69,31 +86,23 @@
       <el-form :model="currentQuestion" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="题号" required>
-              <el-input-number 
-                v-model="currentQuestion.question_number" 
-                :min="1" 
-                :max="isEditMode ? questions.length : questions.length + 1"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
             <el-form-item label="题型" required>
               <el-select v-model="currentQuestion.question_type" style="width: 100%">
                 <el-option label="选择题" value="choice" />
                 <el-option label="填空题" value="fill_blank" />
-                <el-option label="主观题" value="essay" />
+                <el-option label="判断题" value="true_false" />
+                <el-option label="简答题" value="essay" />
                 <el-option label="计算题" value="calculation" />
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="分值" required>
+              <el-input-number v-model="currentQuestion.total_score" :min="0" :precision="1" />
+            </el-form-item>
+          </el-col>
         </el-row>
         
-        <el-form-item label="分值" required>
-          <el-input-number v-model="currentQuestion.total_score" :min="0" :precision="1" />
-        </el-form-item>
-
         <el-form-item label="题目内容" required>
           <el-input
             v-model="currentQuestion.question_title"
@@ -127,6 +136,80 @@
       </template>
     </el-dialog>
 
+    <!-- 添加已录入题目对话框 -->
+    <el-dialog
+      v-model="showAddExistingDialog"
+      title="添加已录入题目"
+      width="900px"
+      @open="fetchAvailableQuestions"
+    >
+      <div style="margin-bottom: 15px; display: flex; gap: 10px;">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索题目内容/题型"
+          style="width: 300px;"
+          @keyup.enter="searchAvailableQuestions"
+        >
+          <template #append>
+            <el-button @click="searchAvailableQuestions"><el-icon><Search /></el-icon></el-button>
+          </template>
+        </el-input>
+        <el-button @click="fetchAvailableQuestions">刷新</el-button>
+      </div>
+
+      <el-table
+        :data="availableQuestions"
+        style="width: 100%"
+        height="500"
+        @selection-change="handleAvailableSelectionChange"
+      >
+        <el-table-column type="selection" width="55" />
+        <el-table-column label="题型" width="100">
+          <template #default="scope">
+            <el-tag :type="getQuestionTypeColor(scope.row.type)">
+              {{ getQuestionTypeText(scope.row.type) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="题目内容" min-width="300">
+          <template #default="scope">
+            <div class="truncate-text" :title="scope.row.content">{{ scope.row.content }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="分值" width="80">
+          <template #default="scope">
+            <span>{{ scope.row.score }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="160">
+          <template #default="scope">
+            <span>{{ formatDateTime(scope.row.created_at) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80" align="center">
+          <template #default="scope">
+             <el-button
+              type="danger"
+              icon="Delete"
+              circle
+              size="small"
+              @click.stop="deleteGlobalQuestion(scope.row)"
+              title="从题库中彻底删除"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="showAddExistingDialog = false">取消</el-button>
+          <el-button type="primary" @click="addSelectedQuestions" :disabled="selectedAvailableQuestions.length === 0">
+            添加选中题目 ({{ selectedAvailableQuestions.length }})
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
+
     <!-- 题目导入对话框 -->
     <el-dialog
       v-model="showImportQuestionDialog"
@@ -157,18 +240,12 @@
         </el-upload>
 
         <div style="margin-top: 30px; text-align: left;">
-          <h4>题目导入格式说明 (Word/文本):</h4>
+          <h4>题目导入格式说明:</h4>
           <ul style="list-style: none; padding: 0; font-size: 13px; color: #666;">
-            <li>• 每行为一道题目 (以回车换行区分)</li>
-            <li>• 字段间用 @@@ 分隔</li>
-            <li>• 格式: 题号@@@题型@@@题目内容@@@分值@@@参考答案@@@赋分规则</li>
-            <li>• 题号: 可为空 (自动排序)</li>
-            <li>• 题型: 可为空 (支持"选择题", "判断题"等)</li>
-            <li>• 题目内容: 必填</li>
-            <li>• 分值: 必填 (数字)</li>
-            <li>• 参考答案: 可为空</li>
-            <li>• 赋分规则: 可为空</li>
-            <li>• 包含图片的行将自动跳过</li>
+            <li>• Word/文本: 题目间换行，字段用 @@@ 分隔</li>
+            <li>• 格式: (序号)@@@题型@@@内容@@@分值@@@答案@@@规则</li>
+            <li>• Excel: 每行一题，列顺序对应上述字段</li>
+            <li>• 序号列可忽略，系统自动处理</li>
           </ul>
         </div>
       </div>
@@ -187,8 +264,8 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch, defineProps, defineEmits } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Upload, UploadFilled, Rank } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Upload, UploadFilled, Rank, Plus, DocumentCopy, Refresh, Delete, Search } from '@element-plus/icons-vue'
 import axios from 'axios'
 
 const props = defineProps({
@@ -201,17 +278,20 @@ const props = defineProps({
 const emit = defineEmits(['update:questions'])
 
 const questions = ref([])
+const availableQuestions = ref([])
+const selectedExamQuestions = ref([])
+const selectedAvailableQuestions = ref([])
 const questionTableRef = ref(null)
 
 // Dialogs
 const showQuestionDialog = ref(false)
 const showImportQuestionDialog = ref(false)
+const showAddExistingDialog = ref(false)
 
 // State
 const isEditMode = ref(false)
 const currentQuestion = ref({
   id: null,
-  question_number: 1,
   question_type: 'choice',
   question_title: '',
   reference_answer: '',
@@ -219,6 +299,7 @@ const currentQuestion = ref({
   total_score: 4
 })
 const selectedQuestionFile = ref(null)
+const searchKeyword = ref('')
 
 // 获取题目列表
 const fetchQuestions = async () => {
@@ -231,12 +312,30 @@ const fetchQuestions = async () => {
   }
 }
 
+// 获取未分配的题目
+const fetchAvailableQuestions = async () => {
+  try {
+    const params = {}
+    if (searchKeyword.value) {
+      params.search = searchKeyword.value
+    }
+    const response = await axios.get(`http://localhost:8001/api/exams/${props.examId}/available-questions`, { params })
+    availableQuestions.value = response.data.data || []
+  } catch (error) {
+    console.error('获取可用题目失败:', error)
+    ElMessage.error('获取可用题目失败')
+  }
+}
+
+const searchAvailableQuestions = () => {
+  fetchAvailableQuestions()
+}
+
 // 打开添加题目对话框
 const openAddQuestionDialog = () => {
   isEditMode.value = false
   currentQuestion.value = {
     id: null,
-    question_number: questions.value.length + 1,
     question_type: 'choice',
     question_title: '',
     reference_answer: '',
@@ -249,11 +348,9 @@ const openAddQuestionDialog = () => {
 // 双击题目行打开编辑
 const handleQuestionDblClick = (row) => {
   isEditMode.value = true
-  const index = questions.value.findIndex(q => q.id === row.id)
   
   currentQuestion.value = {
     id: row.id,
-    question_number: index + 1,
     question_type: row.type,
     question_title: row.content,
     reference_answer: row.reference_answer,
@@ -279,24 +376,10 @@ const handleSaveQuestion = async () => {
         reference_answer: currentQuestion.value.reference_answer,
         scoring_rules: currentQuestion.value.scoring_rules
       })
-
-      // Handle Reorder if number changed
-      const oldIndex = questions.value.findIndex(q => q.id === currentQuestion.value.id)
-      const newIndex = currentQuestion.value.question_number - 1
-      
-      if (oldIndex !== -1 && oldIndex !== newIndex) {
-        const items = [...questions.value]
-        const [item] = items.splice(oldIndex, 1)
-        items.splice(newIndex, 0, item)
-        
-        const questionIds = items.map(q => q.id)
-        await axios.post(`http://localhost:8001/api/exams/${props.examId}/questions/reorder`, questionIds)
-      }
-      
       ElMessage.success('更新成功')
     } else {
       await axios.post(`http://localhost:8001/api/exams/${props.examId}/questions`, {
-        question_order: currentQuestion.value.question_number,
+        // question_order is optional now, backend handles it
         question_type: currentQuestion.value.question_type,
         content: currentQuestion.value.question_title,
         score: currentQuestion.value.total_score,
@@ -311,6 +394,102 @@ const handleSaveQuestion = async () => {
   } catch (error) {
     console.error('保存题目失败:', error)
     ElMessage.error('保存题目失败')
+  }
+}
+
+// 批量移除题目
+const removeBatchQuestions = async () => {
+  if (selectedExamQuestions.value.length === 0) return
+
+  try {
+    const confirmed = await ElMessageBox.confirm(
+      '移除确认',
+      `确定要从本次考试中移除选中的 ${selectedExamQuestions.value.length} 道题目吗？`,
+      {
+        confirmButtonText: '确定移除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    if (!confirmed) return
+
+    const questionIds = selectedExamQuestions.value.map(q => q.id)
+    const response = await axios.post(`http://localhost:8001/api/exams/${props.examId}/questions/remove-batch`, questionIds, {
+      headers: { 'Content-Type': 'application/json' }
+    })
+
+    if (response.data.code === 1) {
+      ElMessage.success(`成功移除 ${response.data.data.removed_count} 道题目`)
+      selectedExamQuestions.value = []
+      await fetchQuestions()
+    } else {
+      ElMessage.error(response.data.msg || '移除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+        console.error('批量移除题目失败:', error)
+        ElMessage.error('批量移除题目失败')
+    }
+  }
+}
+
+// 添加选中的题目到考试
+const addSelectedQuestions = async () => {
+  if (selectedAvailableQuestions.value.length === 0) {
+    ElMessage.warning('请选择要添加的题目')
+    return
+  }
+
+  try {
+    const questionIds = selectedAvailableQuestions.value.map(q => q.id)
+    const response = await axios.post(`http://localhost:8001/api/exams/${props.examId}/add-existing-questions`, questionIds, {
+      headers: { 'Content-Type': 'application/json' }
+    })
+
+    if (response.data.code === 1) {
+      ElMessage.success(`成功添加 ${response.data.data.added_count} 道题目`)
+      showAddExistingDialog.value = false
+      selectedAvailableQuestions.value = []
+      await fetchQuestions()
+    } else {
+      ElMessage.error(response.data.msg || '添加失败')
+    }
+  } catch (error) {
+    console.error('添加题目失败:', error)
+    ElMessage.error('添加题目失败')
+  }
+}
+
+// 全局删除题目
+const deleteGlobalQuestion = async (question) => {
+  try {
+    const confirmed = await ElMessageBox.confirm(
+      '彻底删除确认',
+      `确定要从题库中彻底删除该题目吗？\n内容: ${question.content.substring(0, 30)}...\n警告：此操作不可恢复！`,
+      {
+        confirmButtonText: '确定彻底删除',
+        cancelButtonText: '取消',
+        type: 'error',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+
+    if (!confirmed) return
+
+    const response = await axios.delete(`http://localhost:8001/api/questions/${question.id}`)
+
+    if (response.data.code === 1) {
+      ElMessage.success('删除成功')
+      await fetchAvailableQuestions()
+    } else {
+      ElMessage.error(response.data.msg || '删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+        console.error('删除题目失败:', error)
+        ElMessage.error('删除题目失败')
+    }
   }
 }
 
@@ -353,12 +532,20 @@ const importQuestionsFromFile = async () => {
   }
 }
 
+// Selection Handlers
+const handleExamQuestionSelectionChange = (selection) => {
+  selectedExamQuestions.value = selection
+}
+
+const handleAvailableSelectionChange = (selection) => {
+  selectedAvailableQuestions.value = selection
+}
+
 // Reorder Logic
 const reorderExamQuestions = async () => {
   try {
     const questionIds = questions.value.map(q => q.id)
     await axios.post(`http://localhost:8001/api/exams/${props.examId}/questions/reorder`, questionIds)
-    await fetchQuestions()
   } catch (error) {
     console.error('更新排序失败:', error)
     ElMessage.error('更新排序失败')
@@ -368,22 +555,30 @@ const reorderExamQuestions = async () => {
 // Helpers
 const getQuestionTypeColor = (type) => {
   const typeMap = {
-    choice: 'primary',
-    fill_blank: 'success',
-    essay: 'warning',
-    calculation: 'info'
+    choice: 'primary',   // 蓝色：清新
+    fill_blank: 'success', // 绿色：柔和
+    essay: 'warning',    // 奶橙色：温和表达
+    calculation: 'danger', // 珊瑚红：紧张感
+    true_false: 'info'   // 浅灰蓝：中性判断
   }
-  return typeMap[type] || ''
+  return typeMap[type] || 'info'
 }
+
 
 const getQuestionTypeText = (type) => {
   const typeMap = {
     choice: '选择题',
     fill_blank: '填空题',
-    essay: '主观题',
-    calculation: '计算题'
+    essay: '简答题',
+    calculation: '计算题',
+    true_false: '判断题'
   }
   return typeMap[type] || '未知'
+}
+
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return '-'
+  return new Date(dateStr).toLocaleString()
 }
 
 // Drag and Drop

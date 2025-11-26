@@ -98,7 +98,7 @@ class StudentUpdate(BaseModel):
     contact_info: Optional[str] = None
 
 class QuestionRequest(BaseModel):
-    question_order: int
+    question_order: Optional[int] = None
     question_type: Optional[str] = ""
     content: str
     score: float
@@ -1219,25 +1219,6 @@ def create_question(exam_id: int, question: QuestionRequest):
             # 开启事务
             trans = conn.begin()
             try:
-                # 检查是否需要重排序
-                if question.question_order:
-                    existing = conn.execute(
-                        text("SELECT 1 FROM exam_questions WHERE exam_id = :exam_id AND question_order = :order"),
-                        {"exam_id": exam_id, "order": question.question_order}
-                    ).fetchone()
-                    
-                    if existing:
-                        # 如果位置被占用，将该位置及之后的题目序号+1
-                        conn.execute(
-                            text("""
-                            UPDATE exam_questions 
-                            SET question_order = question_order + 1 
-                            WHERE exam_id = :exam_id AND question_order >= :order
-                            ORDER BY question_order DESC
-                            """),
-                            {"exam_id": exam_id, "order": question.question_order}
-                        )
-
                 # 1. 插入题目信息
                 result = conn.execute(
                     text("""
@@ -1255,6 +1236,15 @@ def create_question(exam_id: int, question: QuestionRequest):
                 question_id = result.lastrowid
 
                 # 2. 插入考试题目关联
+                # 如果没有提供序号，则放在最后
+                final_order = question.question_order
+                if final_order is None:
+                    max_order = conn.execute(
+                        text("SELECT MAX(question_order) FROM exam_questions WHERE exam_id = :exam_id"),
+                        {"exam_id": exam_id}
+                    ).scalar()
+                    final_order = (max_order or 0) + 1
+
                 conn.execute(
                     text("""
                     INSERT INTO exam_questions (exam_id, question_id, question_order)
@@ -1263,7 +1253,7 @@ def create_question(exam_id: int, question: QuestionRequest):
                     {
                         "exam_id": exam_id,
                         "question_id": question_id,
-                        "question_order": question.question_order
+                        "question_order": final_order
                     }
                 )
                 
@@ -1309,6 +1299,149 @@ def get_exam_questions(exam_id: int):
     except Exception as e:
         logger.error(f"获取考试题目失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取考试题目失败: {str(e)}")
+
+@app.get("/api/exams/{exam_id}/available-questions")
+def get_available_questions(exam_id: int, search: Optional[str] = None):
+    """获取未分配到该考试的题目列表"""
+    try:
+        with engine.connect() as conn:
+            # 检查考试是否存在
+            exam_result = conn.execute(text("SELECT exam_id FROM exams WHERE exam_id = :exam_id"), {"exam_id": exam_id}).fetchone()
+            if not exam_result:
+                raise HTTPException(status_code=404, detail=f"考试 {exam_id} 不存在")
+
+            # 构建查询条件
+            where_clause = "WHERE q.id NOT IN (SELECT eq.question_id FROM exam_questions eq WHERE eq.exam_id = :exam_id)"
+            params = {"exam_id": exam_id}
+
+            if search:
+                where_clause += " AND (q.content LIKE :search OR q.type LIKE :search)"
+                params.update({"search": f"%{search}%"})
+
+            # 获取未分配到该考试的题目
+            result = conn.execute(
+                text(f"""
+                SELECT q.*
+                FROM questions q
+                {where_clause}
+                ORDER BY q.created_at DESC
+                """),
+                params
+            )
+            questions = []
+            for row in result.fetchall():
+                q = {
+                    "id": row.id,
+                    "type": row.type,
+                    "content": row.content,
+                    "score": float(row.score) if row.score is not None else 0,
+                    "reference_answer": row.reference_answer,
+                    "scoring_rules": row.scoring_rules,
+                    "created_at": row.created_at.isoformat() if row.created_at else None
+                }
+                questions.append(q)
+
+            return {"code": 1, "msg": "获取成功", "data": questions}
+    except Exception as e:
+        logger.error(f"获取可用题目失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取可用题目失败: {str(e)}")
+
+@app.post("/api/exams/{exam_id}/add-existing-questions")
+def add_existing_questions_to_exam(exam_id: int, question_ids: List[int] = Body(...)):
+    """添加已存在的题目到考试"""
+    try:
+        with engine.connect() as conn:
+            # 检查考试是否存在
+            exam_result = conn.execute(text("SELECT exam_id FROM exams WHERE exam_id = :exam_id"), {"exam_id": exam_id}).fetchone()
+            if not exam_result:
+                raise HTTPException(status_code=404, detail=f"考试 {exam_id} 不存在")
+
+            added_count = 0
+            
+            # 获取当前最大序号
+            max_order = conn.execute(
+                text("SELECT MAX(question_order) FROM exam_questions WHERE exam_id = :exam_id"),
+                {"exam_id": exam_id}
+            ).scalar()
+            current_order = (max_order or 0) + 1
+
+            for question_id in question_ids:
+                try:
+                    # 检查题目是否存在
+                    question_result = conn.execute(
+                        text("SELECT id FROM questions WHERE id = :question_id"),
+                        {"question_id": question_id}
+                    ).fetchone()
+
+                    if not question_result:
+                        continue
+
+                    # 检查是否已经在该考试中
+                    existing_relation = conn.execute(
+                        text("SELECT 1 FROM exam_questions WHERE exam_id = :exam_id AND question_id = :question_id"),
+                        {"exam_id": exam_id, "question_id": question_id}
+                    ).fetchone()
+
+                    if existing_relation:
+                        continue
+
+                    # 添加题目到考试
+                    conn.execute(
+                        text("""
+                        INSERT INTO exam_questions (exam_id, question_id, question_order)
+                        VALUES (:exam_id, :question_id, :question_order)
+                        """),
+                        {
+                            "exam_id": exam_id,
+                            "question_id": question_id,
+                            "question_order": current_order
+                        }
+                    )
+                    current_order += 1
+                    added_count += 1
+
+                except Exception as e:
+                    logger.warning(f"添加题目失败 {question_id}: {str(e)}")
+                    continue
+
+            conn.commit()
+
+            return {"code": 1, "msg": f"成功添加 {added_count} 道题目", "data": {"added_count": added_count}}
+    except Exception as e:
+        logger.error(f"添加已存在题目失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"添加已存在题目失败: {str(e)}")
+
+@app.post("/api/exams/{exam_id}/questions/remove-batch")
+def remove_questions_batch(exam_id: int, question_ids: List[int] = Body(...)):
+    """批量移除题目从考试"""
+    try:
+        with engine.connect() as conn:
+            removed_count = 0
+            for question_id in question_ids:
+                result = conn.execute(
+                    text("DELETE FROM exam_questions WHERE exam_id = :exam_id AND question_id = :question_id"),
+                    {"exam_id": exam_id, "question_id": question_id}
+                )
+                if result.rowcount > 0:
+                    removed_count += 1
+            
+            conn.commit()
+            return {"code": 1, "msg": "移除成功", "data": {"removed_count": removed_count}}
+    except Exception as e:
+        logger.error(f"批量移除题目失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"批量移除题目失败: {str(e)}")
+
+@app.delete("/api/questions/{question_id}")
+def delete_question(question_id: int):
+    """彻底删除题目"""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("DELETE FROM questions WHERE id = :question_id"), {"question_id": question_id})
+            conn.commit()
+            return {"code": 1, "msg": "删除成功"}
+    except Exception as e:
+        logger.error(f"删除题目失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"删除题目失败: {str(e)}")
 
 class QuestionUpdate(BaseModel):
     question_type: Optional[str] = None
@@ -1421,31 +1554,40 @@ async def import_questions_from_file(exam_id: int, file: UploadFile = File(...))
                         continue
 
                     try:
-                        # 解析序号 (如果第一列是数字)
-                        order_part = re.sub(r'\D', '', parts[0])
-                        order = int(order_part) if order_part else None
-                        
                         q_type = ""
                         content_str = ""
                         score = 0.0
                         ref_answer = ""
                         rules = ""
 
+                        # 尝试解析，不再强制要求第一列是序号
+                        # 兼容带序号和不带序号的格式
+                        # 如果第一列看起来像数字，我们忽略它（使用自动排序），但内容往后移
+                        # 如果不是数字，我们假设它不是序号
+
+                        # 简单起见，我们假设用户可能提供序号，也可能不提供
+                        # 重要的是提取内容、分值等
+                        
+                        # 策略：从后往前解析确定字段
+                        # [可选序号] [可选题型] 内容 分值 答案 [可选规则]
+                        
+                        # 为了简化，我们沿用之前的逻辑但忽略order字段
+                        
                         if len(parts) >= 6:
-                            # 完整格式：题号, 题型, 内容, 分值, 答案, 规则
+                            # 完整格式：(序号), 题型, 内容, 分值, 答案, 规则
                             q_type = parts[1]
                             content_str = parts[2]
                             score = float(re.sub(r'[^\d.]', '', parts[3]) or 0)
                             ref_answer = parts[4]
                             rules = parts[5]
                         elif len(parts) == 5:
-                            # 5个字段: 题号, 题型, 内容, 分值, 答案
+                            # 5个字段: (序号), 题型, 内容, 分值, 答案
                             q_type = parts[1]
                             content_str = parts[2]
                             score = float(re.sub(r'[^\d.]', '', parts[3]) or 0)
                             ref_answer = parts[4]
                         else: # len == 4
-                            # 4个字段: 题号, 内容, 分值, 答案 (无题型)
+                            # 4个字段: (序号), 内容, 分值, 答案 (无题型)
                             content_str = parts[1]
                             score = float(re.sub(r'[^\d.]', '', parts[2]) or 0)
                             ref_answer = parts[3]
@@ -1453,20 +1595,15 @@ async def import_questions_from_file(exam_id: int, file: UploadFile = File(...))
                         if not content_str or score <= 0:
                             continue
 
-                        # 题型映射：使用原始中文，前端负责展示转换
-                        # 常见题型标准化（可选，或者直接存）
-                        # 这里直接存原始值，或做简单映射
-                        type_map = {
-                            "选择题": "choice", "选择": "choice",
-                            "填空题": "fill_blank", "填空": "fill_blank",
-                            "主观题": "essay", "简答题": "essay", "解答题": "essay", "问答题": "essay",
-                            "计算题": "calculation", "计算": "calculation"
-                        }
-                        # 优先使用映射，如果没有则存原始值
-                        final_type = type_map.get(q_type, q_type if q_type else "essay")
+                                            type_map = {
+                                                    "选择题": "choice", "选择": "choice",
+                                                    "填空题": "fill_blank", "填空": "fill_blank",
+                                                    "主观题": "essay", "简答题": "essay", "解答题": "essay", "问答题": "essay",
+                                                    "计算题": "calculation", "计算": "calculation",
+                                                    "判断题": "true_false", "判断": "true_false"
+                                            }                        final_type = type_map.get(q_type, q_type if q_type else "essay")
 
                         questions_to_add.append({
-                            "question_order": order,
                             "question_type": final_type,
                             "content": content_str,
                             "score": score,
@@ -1481,24 +1618,23 @@ async def import_questions_from_file(exam_id: int, file: UploadFile = File(...))
                 # 处理 Excel
                 df = pd.read_excel(io.BytesIO(content))
                 for _, row in df.iterrows():
-                    # 至少要有题号(可空), 内容, 分值
+                    # 至少要有内容, 分值
                     if pd.isna(row.iloc[2]) or pd.isna(row.iloc[3]):
                         continue
                     
-                    order_val = row.iloc[0]
-                    order = int(order_val) if pd.notna(order_val) and str(order_val).isdigit() else None
+                    # 忽略第一列序号 row.iloc[0]
                     
                     raw_type = str(row.iloc[1]) if len(row) > 1 and pd.notna(row.iloc[1]) else ""
                     type_map = {
                             "选择题": "choice", "选择": "choice",
                             "填空题": "fill_blank", "填空": "fill_blank",
                             "主观题": "essay", "简答题": "essay", "解答题": "essay", "问答题": "essay",
-                            "计算题": "calculation", "计算": "calculation"
+                            "计算题": "calculation", "计算": "calculation",
+                            "判断题": "true_false", "判断": "true_false"
                     }
                     final_type = type_map.get(raw_type, raw_type if raw_type else "essay")
 
                     questions_to_add.append({
-                        "question_order": order,
                         "question_type": final_type,
                         "content": str(row.iloc[2]),
                         "score": float(row.iloc[3]),
@@ -1520,9 +1656,6 @@ async def import_questions_from_file(exam_id: int, file: UploadFile = File(...))
                     if len(parts) < 4: continue
                     
                     try:
-                        order_part = re.sub(r'\D', '', parts[0])
-                        order = int(order_part) if order_part else None
-                        
                         q_type = ""
                         content_str = ""
                         score = 0.0
@@ -1545,16 +1678,15 @@ async def import_questions_from_file(exam_id: int, file: UploadFile = File(...))
                             score = float(re.sub(r'[^\d.]', '', parts[2]) or 0)
                             ref_answer = parts[3]
                             
-                        type_map = {
-                            "选择题": "choice", "选择": "choice",
-                            "填空题": "fill_blank", "填空": "fill_blank",
-                            "主观题": "essay", "简答题": "essay", "解答题": "essay", "问答题": "essay",
-                            "计算题": "calculation", "计算": "calculation"
-                        }
-                        final_type = type_map.get(q_type, q_type if q_type else "essay")
+                                            type_map = {
+                                                    "选择题": "choice", "选择": "choice",
+                                                    "填空题": "fill_blank", "填空": "fill_blank",
+                                                    "主观题": "essay", "简答题": "essay", "解答题": "essay", "问答题": "essay",
+                                                    "计算题": "calculation", "计算": "calculation",
+                                                    "判断题": "true_false", "判断": "true_false"
+                                            }                        final_type = type_map.get(q_type, q_type if q_type else "essay")
 
                         questions_to_add.append({
-                            "question_order": order,
                             "question_type": final_type,
                             "content": content_str,
                             "score": score,
@@ -1577,21 +1709,9 @@ async def import_questions_from_file(exam_id: int, file: UploadFile = File(...))
         with engine.connect() as conn:
             trans = conn.begin()
             try:
-                # 获取已存在的序号
-                existing_orders = set()
-                res = conn.execute(text("SELECT question_order FROM exam_questions WHERE exam_id = :exam_id"), {"exam_id": exam_id})
-                for row in res.fetchall():
-                    existing_orders.add(row[0])
-
                 for q in questions_to_add:
-                    # 处理序号冲突或空序号
-                    target_order = q["question_order"]
-                    if target_order is None or target_order in existing_orders:
-                        current_max_order += 1
-                        target_order = current_max_order
+                    current_max_order += 1
                     
-                    existing_orders.add(target_order) # 更新已存在集合，防止本次批量导入内部冲突
-
                     # 插入题目
                     res = conn.execute(
                         text("""
@@ -1617,7 +1737,7 @@ async def import_questions_from_file(exam_id: int, file: UploadFile = File(...))
                         {
                             "exam_id": exam_id,
                             "question_id": qid,
-                            "question_order": target_order
+                            "question_order": current_max_order
                         }
                     )
                     imported_count += 1
