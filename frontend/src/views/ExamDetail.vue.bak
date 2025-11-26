@@ -153,28 +153,36 @@
           <el-tab-pane label="参考答案和题目信息" name="questions">
             <div class="tab-content">
               <div class="tab-actions">
-                <el-button type="primary" @click="showAddQuestionDialog = true">
-                  添加题目
-                </el-button>
-                <el-button type="success" @click="showImportQuestionDialog = true">
+                <el-button type="primary" @click="showImportQuestionDialog = true">
                   <el-icon><Upload /></el-icon>
-                  从文件导入题目
+                  从文件导入
                 </el-button>
                 <el-button @click="fetchQuestions">刷新</el-button>
               </div>
 
-              <el-table :data="questions" style="width: 100%">
-                <el-table-column prop="question_number" label="题号" width="80" />
-                <el-table-column prop="question_title" label="题目标题" />
-                <el-table-column prop="question_type" label="题型" width="120">
+              <el-table 
+                ref="questionsTableRef"
+                :data="questions" 
+                style="width: 100%"
+                row-key="id"
+              >
+                <el-table-column width="40">
+                    <template #default>
+                        <el-icon class="drag-handle" style="cursor: move; color: #909399;"><Rank /></el-icon>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="question_order" label="题号" width="80" />
+                <el-table-column prop="type" label="题型" width="120">
                   <template #default="scope">
-                    <el-tag :type="getQuestionTypeColor(scope.row.question_type)">
-                      {{ getQuestionTypeText(scope.row.question_type) }}
+                    <el-tag :type="getQuestionTypeColor(scope.row.type)">
+                      {{ getQuestionTypeText(scope.row.type) }}
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="total_score" label="分值" width="80" />
+                <el-table-column prop="content" label="题目内容" />
+                <el-table-column prop="score" label="分值" width="80" />
                 <el-table-column prop="reference_answer" label="参考答案" show-overflow-tooltip />
+                <el-table-column prop="scoring_rules" label="赋分规则" show-overflow-tooltip />
               </el-table>
             </div>
           </el-tab-pane>
@@ -379,41 +387,6 @@
       </template>
     </el-dialog>
 
-    <!-- 添加题目对话框 -->
-    <el-dialog v-model="showAddQuestionDialog" title="添加题目" width="600px">
-      <el-form :model="newQuestion" label-width="100px">
-        <el-form-item label="题号" required>
-          <el-input-number v-model="newQuestion.question_number" :min="1" />
-        </el-form-item>
-        <el-form-item label="题型" required>
-          <el-select v-model="newQuestion.question_type" style="width: 100%">
-            <el-option label="选择题" value="choice" />
-            <el-option label="填空题" value="fill_blank" />
-            <el-option label="主观题" value="essay" />
-            <el-option label="计算题" value="calculation" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="题目标题">
-          <el-input v-model="newQuestion.question_title" />
-        </el-form-item>
-        <el-form-item label="参考答案">
-          <el-input
-            v-model="newQuestion.reference_answer"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入参考答案"
-          />
-        </el-form-item>
-        <el-form-item label="分值">
-          <el-input-number v-model="newQuestion.total_score" :min="1" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showAddQuestionDialog = false">取消</el-button>
-        <el-button type="primary" @click="addQuestion">添加</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 成绩详情对话框 -->
     <el-dialog v-model="showScoreDetailDialog" title="成绩详情" width="600px">
       <div v-if="scoreDetail">
@@ -446,12 +419,12 @@
           drag
           action=""
           :auto-upload="false"
-          :on-change="handleFileChange"
+          :on-change="handleStudentFileChange"
           :show-file-list="true"
           accept=".xlsx,.xls,.txt,.csv"
           style="margin-bottom: 20px;"
         >
-          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+          <el-icon class="el-icon--upload"><!-- <UploadFilled /> --></el-icon>
           <div class="el-upload__text">
             将文件拖到此处，或<em>点击上传</em>
           </div>
@@ -474,7 +447,58 @@
       <template #footer>
         <span class="dialog-footer">
           <el-button @click="showFileImportDialog = false">取消</el-button>
-          <el-button type="primary" @click="importStudentsFromFile" :disabled="!selectedFile">
+          <el-button type="primary" @click="importStudentsFromFile" :disabled="!selectedStudentFile">
+            开始导入
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 题目文件导入对话框 -->
+    <el-dialog
+      v-model="showImportQuestionDialog"
+      title="从文件导入题目"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <div style="text-align: center; padding: 40px;">
+        <el-upload
+          class="upload-demo"
+          drag
+          action=""
+          :auto-upload="false"
+          :on-change="handleQuestionFileChange"
+          :show-file-list="true"
+          accept=".doc,.docx,.xlsx,.xls,.txt,.csv"
+          style="margin-bottom: 20px;"
+        >
+          <el-icon class="el-icon--upload"><!-- <UploadFilled /> --></el-icon>
+          <div class="el-upload__text">
+            将文件拖到此处，或<em>点击上传</em>
+          </div>
+          <template #tip>
+            <div class="el-upload__tip">
+              支持 Word (.doc, .docx)、Excel (.xlsx, .xls)、文本文件 (.txt, csv)
+            </div>
+          </template>
+        </el-upload>
+
+        <div style="margin-top: 30px;">
+          <h4>文件格式说明：</h4>
+          <ul style="list-style: none; padding: 0;">
+            <li>• 每行/段落一个题目，按顺序录入</li>
+            <li>• 格式：题号@@@题型@@@题目内容@@@分值@@@参考答案@@@赋分规则</li>
+            <li>• 字段分隔符：请务必使用 '@@@' 分隔每个字段（Txt/Word）</li>
+            <li>• 支持题型：选择题 (choice), 填空题 (fill_blank), 主观题 (essay), 计算题 (calculation)</li>
+            <li>• Word文档中将自动跳过包含图片的行</li>
+          </ul>
+        </div>
+      </div>
+
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="showImportQuestionDialog = false">取消</el-button>
+          <el-button type="primary" @click="importQuestionsFromFile" :disabled="!selectedQuestionFile">
             开始导入
           </el-button>
         </span>
@@ -632,67 +656,11 @@
         </span>
       </template>
     </el-dialog>
-
-    <!-- 题目导入对话框 -->
-    <el-dialog
-      v-model="showImportQuestionDialog"
-      title="从文件导入题目"
-      width="600px"
-      :close-on-click-modal="false"
-    >
-      <div style="text-align: center; padding: 40px;">
-        <el-upload
-          class="upload-demo"
-          drag
-          action=""
-          :auto-upload="false"
-          :on-change="handleQuestionFileChange"
-          :show-file-list="true"
-          accept=".doc,.docx,.xlsx,.xls,.txt,.csv"
-          style="margin-bottom: 20px;"
-        >
-          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-          <div class="el-upload__text">
-            将文件拖到此处，或<em>点击上传</em>
-          </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              支持 Word (.doc, .docx)、Excel (.xlsx, .xls)、文本文件 (.txt, .csv)
-            </div>
-          </template>
-        </el-upload>
-
-        <div style="margin-top: 30px; text-align: left;">
-          <h4>题目导入格式说明 (Word/文本):</h4>
-          <ul style="list-style: none; padding: 0; font-size: 13px; color: #666;">
-            <li>• 每行为一道题目 (以回车换行区分)</li>
-            <li>• 字段间用 @@@ 分隔</li>
-            <li>• 格式: 题号@@@题型@@@题目内容@@@分值@@@参考答案@@@赋分规则</li>
-            <li>• 题号: 可为空 (自动排序)</li>
-            <li>• 题型: 可为空 (支持"选择题", "判断题"等)</li>
-            <li>• 题目内容: 必填</li>
-            <li>• 分值: 必填 (数字)</li>
-            <li>• 参考答案: 可为空</li>
-            <li>• 赋分规则: 可为空</li>
-            <li>• 包含图片的行将自动跳过</li>
-          </ul>
-        </div>
-      </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="showImportQuestionDialog = false">取消</el-button>
-          <el-button type="primary" @click="importQuestionsFromFile" :disabled="!selectedQuestionFile">
-            开始导入
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Upload, DocumentAdd, UploadFilled, Search, User, Refresh, Cpu, Delete, Rank } from '@element-plus/icons-vue'
@@ -714,32 +682,25 @@ const selectedStudents = ref([])
 const selectedExamStudents = ref([]) // Selected students in the exam student list
 const editingRowId = ref(null) // ID of the row currently being edited
 const studentTableRef = ref(null)
+const questionsTableRef = ref(null)
 
 // 对话框控制
 const showAddStudentDialog = ref(false)
 const showAddExistingDialog = ref(false)
 const showFileImportDialog = ref(false)
 const showBatchAddDialog = ref(false)
-const showImportQuestionDialog = ref(false)
 const showUploadDialog = ref(false)
-const showAddQuestionDialog = ref(false)
 const showScoreDetailDialog = ref(false)
+const showImportQuestionDialog = ref(false)
 
 // 表单数据
 const selectedStudentId = ref('')
 const uploadForm = ref({ student_id: '' })
-const newQuestion = ref({
-  question_number: 1,
-  question_type: 'choice',
-  question_title: '',
-  reference_answer: '',
-  total_score: 4
-})
 const scoreDetail = ref(null)
 const detailScores = ref([])
 
 // 文件导入相关
-const selectedFile = ref(null)
+const selectedStudentFile = ref(null)
 const selectedQuestionFile = ref(null)
 const batchAddText = ref('')
 const searchKeyword = ref('')
@@ -751,6 +712,42 @@ const aiGradingStatus = ref('success')
 const aiGradingMessage = ref('')
 
 const uploadRef = ref()
+
+// ... existing code ...
+
+// 导入题目
+const importQuestionsFromFile = async () => {
+  if (!selectedQuestionFile.value) {
+    ElMessage.error('请选择文件')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('file', selectedQuestionFile.value)
+
+  try {
+    ElMessage.info('正在导入题目，请稍候...')
+    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/import-questions`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+
+    if (response.data.code === 1) {
+      ElMessage.success(`题目导入成功！共导入 ${response.data.data.count} 道题目`)
+      showImportQuestionDialog.value = false
+      selectedQuestionFile.value = null
+      await fetchQuestions()
+    } else {
+      ElMessage.error(response.data.msg || '题目导入失败')
+    }
+  } catch (error) {
+    console.error('题目导入失败:', error)
+    if (error.response && error.response.data && error.response.data.detail) {
+        ElMessage.error(error.response.data.detail)
+    } else {
+        ElMessage.error('题目导入失败')
+    }
+  }
+}
 
 // 获取考试信息
 const fetchExam = async () => {
@@ -1103,70 +1100,6 @@ const fetchQuestions = async () => {
   }
 }
 
-// 添加题目
-const addQuestion = async () => {
-  try {
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/questions`, newQuestion.value)
-
-    if (response.data.code === 1) {
-      ElMessage.success('添加成功')
-      showAddQuestionDialog.value = false
-      newQuestion.value = {
-        question_number: questions.value.length + 1,
-        question_type: 'choice',
-        question_title: '',
-        reference_answer: '',
-        total_score: 4
-      }
-      await fetchQuestions()
-    } else {
-      ElMessage.error(response.data.msg || '添加失败')
-    }
-  } catch (error) {
-    console.error('添加题目失败:', error)
-    ElMessage.error('添加题目失败')
-  }
-}
-
-// 题目文件选择
-const handleQuestionFileChange = (file) => {
-  selectedQuestionFile.value = file.raw
-}
-
-// 导入题目
-const importQuestionsFromFile = async () => {
-  if (!selectedQuestionFile.value) {
-    ElMessage.error('请选择文件')
-    return
-  }
-
-  const formData = new FormData()
-  formData.append('file', selectedQuestionFile.value)
-
-  try {
-    ElMessage.info('正在导入题目，请稍候...')
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/import-questions`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-
-    if (response.data.code === 1) {
-      ElMessage.success(`题目导入成功！共导入 ${response.data.data.count} 道题目`)
-      showImportQuestionDialog.value = false
-      selectedQuestionFile.value = null
-      await fetchQuestions()
-    } else {
-      ElMessage.error(response.data.msg || '题目导入失败')
-    }
-  } catch (error) {
-    console.error('题目导入失败:', error)
-    if (error.response && error.response.data && error.response.data.detail) {
-      ElMessage.error(`导入失败: ${error.response.data.detail}`)
-    } else {
-      ElMessage.error('题目导入失败')
-    }
-  }
-}
-
 // 获取成绩列表
 const fetchScores = async () => {
   try {
@@ -1264,12 +1197,12 @@ const getImageStatusText = (status) => {
 
 const getQuestionTypeColor = (type) => {
   const typeMap = {
-    choice: 'primary',
-    fill_blank: 'success',
-    essay: 'warning',
-    calculation: 'info'
+    choice: 'primary', '选择题': 'primary', '选择': 'primary',
+    fill_blank: 'success', '填空题': 'success', '填空': 'success',
+    essay: 'warning', '主观题': 'warning', '简答题': 'warning', '解答题': 'warning', '问答题': 'warning',
+    calculation: 'info', '计算题': 'info', '计算': 'info'
   }
-  return typeMap[type] || ''
+  return typeMap[type] || 'info'
 }
 
 const getQuestionTypeText = (type) => {
@@ -1279,7 +1212,7 @@ const getQuestionTypeText = (type) => {
     essay: '主观题',
     calculation: '计算题'
   }
-  return typeMap[type] || '未知'
+  return typeMap[type] || type || '未知'
 }
 
 const getGradingStatusType = (status) => {
@@ -1454,18 +1387,22 @@ const getTotalStudents = () => {
 }
 
 // 文件导入相关函数
-const handleFileChange = (file) => {
-  selectedFile.value = file.raw
+const handleStudentFileChange = (file) => {
+  selectedStudentFile.value = file.raw
 }
 
-const importFile = async () => {
-  if (!selectedFile.value) {
+const handleQuestionFileChange = (file) => {
+  selectedQuestionFile.value = file.raw
+}
+
+const importStudentsFromFile = async () => {
+  if (!selectedStudentFile.value) {
     ElMessage.error('请选择文件')
     return
   }
 
   const formData = new FormData()
-  formData.append('file', selectedFile.value)
+  formData.append('file', selectedStudentFile.value)
 
   try {
     ElMessage.info('正在导入文件，请稍候...')
@@ -1476,7 +1413,7 @@ const importFile = async () => {
     if (response.data.code === 1) {
       ElMessage.success(`文件导入成功！共导入 ${response.data.data.imported_count} 个学生`)
       showFileImportDialog.value = false
-      selectedFile.value = null
+      selectedStudentFile.value = null
       await fetchExamStudents()
     } else {
       ElMessage.error(response.data.msg || '文件导入失败')
@@ -1601,14 +1538,37 @@ const saveExamStudent = async (student) => {
   }
 }
 
-// 初始化拖拽排序
-const initDragAndDrop = () => {
-  if (!studentTableRef.value) return
+// 调用API保存排序
+const reorderExamStudents = async () => {
+  try {
+    const studentIds = examStudents.value.map(s => s.student_id)
+    await axios.post(`http://localhost:8001/api/exams/${examId}/students/reorder`, studentIds)
+    // ElMessage.success('顺序已更新') // Optional: too annoying if popping up constantly
+  } catch (error) {
+    console.error('更新排序失败:', error)
+    ElMessage.error('更新排序失败')
+  }
+}
 
-  const tbody = studentTableRef.value.$el.querySelector('.el-table__body-wrapper tbody')
+// 题目排序
+const reorderQuestions = async () => {
+  try {
+    const questionIds = questions.value.map(q => q.id)
+    // 需要后端增加题目排序接口
+    await axios.post(`http://localhost:8001/api/exams/${examId}/questions/reorder`, questionIds)
+  } catch (error) {
+    console.error('更新题目排序失败:', error)
+    ElMessage.error('更新题目排序失败')
+  }
+}
+
+// 通用拖拽初始化
+const initTableDrag = (tableRef, dataRef, reorderFunc) => {
+  if (!tableRef.value) return
+
+  const tbody = tableRef.value.$el.querySelector('.el-table__body-wrapper tbody')
   if (!tbody) return
 
-  // 标记已初始化，避免重复添加监听器
   if (tbody.getAttribute('data-dnd-initialized')) return
   tbody.setAttribute('data-dnd-initialized', 'true')
 
@@ -1622,9 +1582,6 @@ const initDragAndDrop = () => {
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', draggingIndex)
     tr.classList.add('dragging')
-    
-    // 这是一个 hack，确保拖拽图像包含整行
-    // setDragImage 在某些浏览器可能需要
   })
 
   tbody.addEventListener('dragend', (e) => {
@@ -1640,58 +1597,48 @@ const initDragAndDrop = () => {
 
   tbody.addEventListener('dragenter', (e) => {
     const destTr = e.target.closest('tr')
-    // 确保目标是行，且正在拖拽中，且不是拖拽自身
     if (!destTr || draggingIndex === -1 || destTr.sectionRowIndex === draggingIndex) return
     
     const destIndex = destTr.sectionRowIndex
     
-    // 交换数据数组中的元素，实现实时视觉反馈
-    const items = [...examStudents.value]
+    const items = [...dataRef.value]
     const movedItem = items[draggingIndex]
     items.splice(draggingIndex, 1)
     items.splice(destIndex, 0, movedItem)
-    examStudents.value = items
+    dataRef.value = items
     
-    // 更新当前拖拽索引，因为行已经移动了
     draggingIndex = destIndex
   })
 
   tbody.addEventListener('drop', async (e) => {
     e.preventDefault()
     if (draggingIndex !== -1) {
-      await reorderExamStudents()
+      await reorderFunc()
     }
   })
 }
 
-// 确保每一行都是可拖拽的
-const ensureRowsDraggable = () => {
-  if (!studentTableRef.value) return
-  const trs = studentTableRef.value.$el.querySelectorAll('.el-table__body-wrapper tbody tr')
+// 通用确保行可拖拽
+const ensureTableRowsDraggable = (tableRef) => {
+  if (!tableRef.value) return
+  const trs = tableRef.value.$el.querySelectorAll('.el-table__body-wrapper tbody tr')
   trs.forEach(tr => {
     tr.setAttribute('draggable', 'true')
   })
 }
 
-// 监听数据变化，重新应用 draggable 属性
-import { watch } from 'vue'
+// 监听数据变化
 watch(examStudents, () => {
   nextTick(() => {
-    ensureRowsDraggable()
+    ensureTableRowsDraggable(studentTableRef)
   })
 }, { deep: true })
 
-// 调用API保存排序
-const reorderExamStudents = async () => {
-  try {
-    const studentIds = examStudents.value.map(s => s.student_id)
-    await axios.post(`http://localhost:8001/api/exams/${examId}/students/reorder`, studentIds)
-    // ElMessage.success('顺序已更新') // Optional: too annoying if popping up constantly
-  } catch (error) {
-    console.error('更新排序失败:', error)
-    ElMessage.error('更新排序失败')
-  }
-}
+watch(questions, () => {
+  nextTick(() => {
+    ensureTableRowsDraggable(questionsTableRef)
+  })
+}, { deep: true })
 
 onMounted(async () => {
   await fetchExam()
@@ -1701,13 +1648,13 @@ onMounted(async () => {
   fetchQuestions()
   fetchScores()
   
-  // Init DnD after data is loaded
   nextTick(() => {
-    initDragAndDrop()
-    ensureRowsDraggable()
+    initTableDrag(studentTableRef, examStudents, reorderExamStudents)
+    initTableDrag(questionsTableRef, questions, reorderQuestions)
+    ensureTableRowsDraggable(studentTableRef)
+    ensureTableRowsDraggable(questionsTableRef)
   })
 })
-</script>
 
 <style scoped>
 /* Add styles for drag and drop visual feedback */

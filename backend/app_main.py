@@ -25,6 +25,8 @@ import hashlib
 import secrets
 import pandas as pd
 import io
+import docx
+import re
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -99,11 +101,12 @@ class StudentUpdate(BaseModel):
     contact_info: Optional[str] = None
 
 class QuestionRequest(BaseModel):
-    question_number: int
-    question_type: str  # choice, fill_blank, essay, calculation
-    question_title: Optional[str] = ""
-    reference_answer: Optional[str] = ""
-    total_score: Optional[int] = 0
+    question_order: int
+    question_type: Optional[str] = ""
+    content: str
+    score: float
+    reference_answer: str
+    scoring_rules: Optional[str] = ""
 
 class AIGradingRequest(BaseModel):
     """AI阅卷请求模型 - 供学生实现接口使用"""
@@ -1216,24 +1219,43 @@ def create_question(exam_id: int, question: QuestionRequest):
     """为考试添加题目"""
     try:
         with engine.connect() as conn:
-            result = conn.execute(
-                text("""
-                INSERT INTO questions (exam_id, question_number, question_type, question_title, reference_answer, total_score)
-                VALUES (:exam_id, :question_number, :question_type, :question_title, :reference_answer, :total_score)
-                """),
-                {
-                    "exam_id": exam_id,
-                    "question_number": question.question_number,
-                    "question_type": question.question_type,
-                    "question_title": question.question_title,
-                    "reference_answer": question.reference_answer,
-                    "total_score": question.total_score
-                }
-            )
-            conn.commit()
-            question_id = result.lastrowid
+            # 开启事务
+            trans = conn.begin()
+            try:
+                # 1. 插入题目信息
+                result = conn.execute(
+                    text("""
+                    INSERT INTO questions (type, content, score, reference_answer, scoring_rules)
+                    VALUES (:type, :content, :score, :reference_answer, :scoring_rules)
+                    """),
+                    {
+                        "type": question.question_type,
+                        "content": question.content,
+                        "score": question.score,
+                        "reference_answer": question.reference_answer,
+                        "scoring_rules": question.scoring_rules
+                    }
+                )
+                question_id = result.lastrowid
 
-            return {"code": 1, "msg": "添加成功", "data": {"question_id": question_id}}
+                # 2. 插入考试题目关联
+                conn.execute(
+                    text("""
+                    INSERT INTO exam_questions (exam_id, question_id, question_order)
+                    VALUES (:exam_id, :question_id, :question_order)
+                    """),
+                    {
+                        "exam_id": exam_id,
+                        "question_id": question_id,
+                        "question_order": question.question_order
+                    }
+                )
+                
+                trans.commit()
+                return {"code": 1, "msg": "添加成功", "data": {"question_id": question_id}}
+            except Exception as e:
+                trans.rollback()
+                raise e
     except Exception as e:
         logger.error(f"添加题目失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"添加题目失败: {str(e)}")
@@ -1244,15 +1266,312 @@ def get_exam_questions(exam_id: int):
     try:
         with engine.connect() as conn:
             result = conn.execute(
-                text("SELECT * FROM questions WHERE exam_id = :exam_id ORDER BY question_number"),
+                text("""
+                SELECT q.*, eq.question_order 
+                FROM questions q
+                JOIN exam_questions eq ON q.id = eq.question_id
+                WHERE eq.exam_id = :exam_id 
+                ORDER BY eq.question_order
+                """),
                 {"exam_id": exam_id}
             )
-            questions = [dict(row) for row in result.fetchall()]
+            questions = []
+            for row in result.fetchall():
+                q = {
+                    "id": row.id,
+                    "question_order": row.question_order,
+                    "type": row.type,
+                    "content": row.content,
+                    "score": float(row.score) if row.score is not None else 0,
+                    "reference_answer": row.reference_answer,
+                    "scoring_rules": row.scoring_rules,
+                    "created_at": row.created_at.isoformat() if row.created_at else None
+                }
+                questions.append(q)
 
             return {"code": 1, "msg": "获取成功", "data": questions}
     except Exception as e:
         logger.error(f"获取考试题目失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取考试题目失败: {str(e)}")
+
+@app.post("/api/exams/{exam_id}/questions/reorder")
+def reorder_exam_questions(exam_id: int, question_ids: List[int] = Body(...)):
+    """重新排序考试题目"""
+    try:
+        with engine.connect() as conn:
+            # 检查考试是否存在
+            exam_result = conn.execute(text("SELECT exam_id FROM exams WHERE exam_id = :exam_id"), {"exam_id": exam_id}).fetchone()
+            if not exam_result:
+                raise HTTPException(status_code=404, detail=f"考试 {exam_id} 不存在")
+
+            # 批量更新排序
+            for index, question_id in enumerate(question_ids):
+                conn.execute(
+                    text("UPDATE exam_questions SET question_order = :question_order WHERE exam_id = :exam_id AND question_id = :question_id"),
+                    {"question_order": index + 1, "exam_id": exam_id, "question_id": question_id}
+                )
+            
+            conn.commit()
+            return {"code": 1, "msg": "排序更新成功"}
+    except Exception as e:
+        logger.error(f"更新题目排序失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"更新题目排序失败: {str(e)}")
+
+@app.post("/api/exams/{exam_id}/import-questions")
+async def import_questions_from_file(exam_id: int, file: UploadFile = File(...)):
+    """从文件导入题目"""
+    try:
+        # 验证考试是否存在
+        with engine.connect() as conn:
+            exam_result = conn.execute(text("SELECT exam_id FROM exams WHERE exam_id = :exam_id"), {"exam_id": exam_id}).fetchone()
+            if not exam_result:
+                raise HTTPException(status_code=404, detail=f"考试 {exam_id} 不存在")
+            
+            # 获取当前最大序号，用于追加
+            max_order_res = conn.execute(text("SELECT MAX(question_order) FROM exam_questions WHERE exam_id = :exam_id"), {"exam_id": exam_id}).scalar()
+            current_max_order = max_order_res if max_order_res is not None else 0
+
+        filename = file.filename.lower()
+        file_ext = os.path.splitext(filename)[1]
+        content = await file.read()
+        questions_to_add = []
+
+        # 定义分隔符
+        SEPARATOR = "@@@"
+
+        try:
+            if file_ext == '.docx':
+                # 处理 Word 文档
+                doc = docx.Document(io.BytesIO(content))
+                for para in doc.paragraphs:
+                    if 'w:drawing' in para._p.xml or 'w:object' in para._p.xml:
+                        logger.info(f"跳过包含图片的段落: {para.text[:20]}...")
+                        continue
+
+                    text_content = para.text.strip()
+                    if not text_content:
+                        continue
+                    
+                    parts = text_content.split(SEPARATOR)
+                    parts = [p.strip() for p in parts]
+                    
+                    if len(parts) < 4:
+                        continue
+
+                    try:
+                        # 解析序号 (如果第一列是数字)
+                        order_part = re.sub(r'\D', '', parts[0])
+                        order = int(order_part) if order_part else None
+                        
+                        q_type = ""
+                        content_str = ""
+                        score = 0.0
+                        ref_answer = ""
+                        rules = ""
+
+                        if len(parts) >= 6:
+                            # 完整格式：题号, 题型, 内容, 分值, 答案, 规则
+                            q_type = parts[1]
+                            content_str = parts[2]
+                            score = float(re.sub(r'[^\d.]', '', parts[3]) or 0)
+                            ref_answer = parts[4]
+                            rules = parts[5]
+                        elif len(parts) == 5:
+                            # 5个字段: 题号, 题型, 内容, 分值, 答案
+                            q_type = parts[1]
+                            content_str = parts[2]
+                            score = float(re.sub(r'[^\d.]', '', parts[3]) or 0)
+                            ref_answer = parts[4]
+                        else: # len == 4
+                            # 4个字段: 题号, 内容, 分值, 答案 (无题型)
+                            content_str = parts[1]
+                            score = float(re.sub(r'[^\d.]', '', parts[2]) or 0)
+                            ref_answer = parts[3]
+                        
+                        if not content_str or score <= 0:
+                            continue
+
+                        # 题型映射：使用原始中文，前端负责展示转换
+                        # 常见题型标准化（可选，或者直接存）
+                        # 这里直接存原始值，或做简单映射
+                        type_map = {
+                            "选择题": "choice", "选择": "choice",
+                            "填空题": "fill_blank", "填空": "fill_blank",
+                            "主观题": "essay", "简答题": "essay", "解答题": "essay", "问答题": "essay",
+                            "计算题": "calculation", "计算": "calculation"
+                        }
+                        # 优先使用映射，如果没有则存原始值
+                        final_type = type_map.get(q_type, q_type if q_type else "essay")
+
+                        questions_to_add.append({
+                            "question_order": order,
+                            "question_type": final_type,
+                            "content": content_str,
+                            "score": score,
+                            "reference_answer": ref_answer,
+                            "scoring_rules": rules
+                        })
+
+                    except ValueError:
+                        continue
+
+            elif file_ext in {'.xlsx', '.xls'}:
+                # 处理 Excel
+                df = pd.read_excel(io.BytesIO(content))
+                for _, row in df.iterrows():
+                    # 至少要有题号(可空), 内容, 分值
+                    if pd.isna(row.iloc[2]) or pd.isna(row.iloc[3]):
+                        continue
+                    
+                    order_val = row.iloc[0]
+                    order = int(order_val) if pd.notna(order_val) and str(order_val).isdigit() else None
+                    
+                    raw_type = str(row.iloc[1]) if len(row) > 1 and pd.notna(row.iloc[1]) else ""
+                    type_map = {
+                            "选择题": "choice", "选择": "choice",
+                            "填空题": "fill_blank", "填空": "fill_blank",
+                            "主观题": "essay", "简答题": "essay", "解答题": "essay", "问答题": "essay",
+                            "计算题": "calculation", "计算": "calculation"
+                    }
+                    final_type = type_map.get(raw_type, raw_type if raw_type else "essay")
+
+                    questions_to_add.append({
+                        "question_order": order,
+                        "question_type": final_type,
+                        "content": str(row.iloc[2]),
+                        "score": float(row.iloc[3]),
+                        "reference_answer": str(row.iloc[4]),
+                        "scoring_rules": str(row.iloc[5]) if len(row) > 5 and pd.notna(row.iloc[5]) else ""
+                    })
+
+            elif file_ext in {'.txt', '.csv'}:
+                # 处理文本/CSV
+                text_content = content.decode('utf-8')
+                lines = text_content.strip().split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line: continue
+                    
+                    parts = line.split(SEPARATOR)
+                    parts = [p.strip() for p in parts]
+                    
+                    if len(parts) < 4: continue
+                    
+                    try:
+                        order_part = re.sub(r'\D', '', parts[0])
+                        order = int(order_part) if order_part else None
+                        
+                        q_type = ""
+                        content_str = ""
+                        score = 0.0
+                        ref_answer = ""
+                        rules = ""
+
+                        if len(parts) >= 6:
+                            q_type = parts[1]
+                            content_str = parts[2]
+                            score = float(re.sub(r'[^\d.]', '', parts[3]) or 0)
+                            ref_answer = parts[4]
+                            rules = parts[5]
+                        elif len(parts) == 5:
+                            q_type = parts[1]
+                            content_str = parts[2]
+                            score = float(re.sub(r'[^\d.]', '', parts[3]) or 0)
+                            ref_answer = parts[4]
+                        else:
+                            content_str = parts[1]
+                            score = float(re.sub(r'[^\d.]', '', parts[2]) or 0)
+                            ref_answer = parts[3]
+                            
+                        type_map = {
+                            "选择题": "choice", "选择": "choice",
+                            "填空题": "fill_blank", "填空": "fill_blank",
+                            "主观题": "essay", "简答题": "essay", "解答题": "essay", "问答题": "essay",
+                            "计算题": "calculation", "计算": "calculation"
+                        }
+                        final_type = type_map.get(q_type, q_type if q_type else "essay")
+
+                        questions_to_add.append({
+                            "question_order": order,
+                            "question_type": final_type,
+                            "content": content_str,
+                            "score": score,
+                            "reference_answer": ref_answer,
+                            "scoring_rules": rules
+                        })
+                    except:
+                        continue
+            else:
+                raise HTTPException(status_code=400, detail="不支持的文件格式")
+
+        except Exception as parse_error:
+            logger.error(f"解析文件失败: {str(parse_error)}")
+            raise HTTPException(status_code=400, detail=f"解析文件失败: {str(parse_error)}")
+
+        if not questions_to_add:
+            raise HTTPException(status_code=400, detail="未解析到有效题目数据")
+
+        imported_count = 0
+        with engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                # 获取已存在的序号
+                existing_orders = set()
+                res = conn.execute(text("SELECT question_order FROM exam_questions WHERE exam_id = :exam_id"), {"exam_id": exam_id})
+                for row in res.fetchall():
+                    existing_orders.add(row[0])
+
+                for q in questions_to_add:
+                    # 处理序号冲突或空序号
+                    target_order = q["question_order"]
+                    if target_order is None or target_order in existing_orders:
+                        current_max_order += 1
+                        target_order = current_max_order
+                    
+                    existing_orders.add(target_order) # 更新已存在集合，防止本次批量导入内部冲突
+
+                    # 插入题目
+                    res = conn.execute(
+                        text("""
+                        INSERT INTO questions (type, content, score, reference_answer, scoring_rules)
+                        VALUES (:type, :content, :score, :reference_answer, :scoring_rules)
+                        """),
+                        {
+                            "type": q["question_type"],
+                            "content": q["content"],
+                            "score": q["score"],
+                            "reference_answer": q["reference_answer"],
+                            "scoring_rules": q["scoring_rules"]
+                        }
+                    )
+                    qid = res.lastrowid
+                    
+                    # 插入关联
+                    conn.execute(
+                        text("""
+                        INSERT INTO exam_questions (exam_id, question_id, question_order)
+                        VALUES (:exam_id, :question_id, :question_order)
+                        """),
+                        {
+                            "exam_id": exam_id,
+                            "question_id": qid,
+                            "question_order": target_order
+                        }
+                    )
+                    imported_count += 1
+                
+                trans.commit()
+            except Exception as db_err:
+                trans.rollback()
+                raise db_err
+
+        return {"code": 1, "msg": f"成功导入 {imported_count} 道题目", "data": {"count": imported_count}}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"导入题目失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"导入题目失败: {str(e)}")
 
 # ==================== AI阅卷扩展接口 ====================
 
