@@ -25,19 +25,23 @@
             <span>{{ exam.description || '暂无描述' }}</span>
           </div>
 
-          <!-- 第二行：开考时间、题目数量、卷面总分 -->
+          <!-- 第二行：开考时间、考试人数、题目数量、卷面总分 -->
           <div class="info-row second-row">
             <div class="info-item">
               <label>开考时间：</label>
               <span>{{ formatExamDate(exam.exam_date) || '未设置' }}</span>
             </div>
             <div class="info-item">
+              <label>考试人数：</label>
+              <span>{{ currentStudentCount }} 人</span>
+            </div>
+            <div class="info-item">
               <label>题目数量：</label>
-              <span>{{ getQuestionCountText() }}</span>
+              <span>{{ currentQuestionCount }} 道</span>
             </div>
             <div class="info-item">
               <label>卷面总分：</label>
-              <span>{{ getTotalScoreText() }}</span>
+              <span>{{ currentTotalScore }} 分</span>
             </div>
           </div>
         </div>
@@ -130,7 +134,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, computed } from 'vue'
 import StudentManager from './exam/StudentManager.vue'
 import QuestionManager from './exam/QuestionManager.vue'
 import AnswerManager from './exam/AnswerManager.vue'
@@ -145,6 +149,10 @@ const route = useRoute()
 const router = useRouter()
 const examId = route.params.exam_id
 
+const goBack = () => {
+  router.push('/home')
+}
+
 const exam = ref(null)
 const activeTab = ref('students')
 const examStudents = ref([])
@@ -156,9 +164,20 @@ const selectedStudentId = ref('')
 const newStudent = ref({})
 const allStudents = ref([])
 
+// Computed properties for exam statistics
+const currentStudentCount = computed(() => {
+  return examStudents.value.length
+})
 
+const currentQuestionCount = computed(() => {
+  return questions.value.length
+})
 
-
+const currentTotalScore = computed(() => {
+  return questions.value.reduce((sum, q) => {
+    return sum + (Number(q.score) || 0)
+  }, 0)
+})
 
 // 获取考试信息
 const fetchExam = async () => {

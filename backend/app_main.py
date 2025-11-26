@@ -395,7 +395,7 @@ def get_students():
     try:
         with engine.connect() as conn:
             result = conn.execute(text("SELECT * FROM students ORDER BY name"))
-            students = [dict(row) for row in result.fetchall()]
+            students = [dict(row._mapping) for row in result.fetchall()]
             return {"code": 1, "msg": "获取成功", "data": students}
     except Exception as e:
         logger.error(f"获取学生列表失败: {str(e)}")
@@ -1202,7 +1202,7 @@ def get_exam_images(exam_id: int, student_id: Optional[int] = None):
             query += " ORDER BY ei.upload_time DESC"
 
             result = conn.execute(text(query), params)
-            images = [dict(row) for row in result.fetchall()]
+            images = [dict(row._mapping) for row in result.fetchall()]
 
             return {"code": 1, "msg": "获取成功", "data": images}
     except Exception as e:
@@ -1666,7 +1666,7 @@ async def trigger_ai_grading(exam_id: int, student_id: Optional[int] = None):
                 text("SELECT * FROM questions WHERE exam_id = :exam_id ORDER BY question_number"),
                 {"exam_id": exam_id}
             )
-            questions = [dict(row) for row in questions_result.fetchall()]
+            questions = [dict(row._mapping) for row in questions_result.fetchall()]
 
             if not questions:
                 raise HTTPException(status_code=400, detail="该考试还没有设置题目")
@@ -1679,7 +1679,7 @@ async def trigger_ai_grading(exam_id: int, student_id: Optional[int] = None):
                     text("SELECT * FROM exam_images WHERE exam_id = :exam_id AND student_id = :student_id"),
                     {"exam_id": exam_id, "student_id": student["student_id"]}
                 )
-                images = [dict(row) for row in images_result.fetchall()]
+                images = [dict(row._mapping) for row in images_result.fetchall()]
 
                 if not images:
                     continue
@@ -1827,7 +1827,7 @@ def get_exam_scores(exam_id: int, student_id: Optional[int] = None):
     try:
         with engine.connect() as conn:
             query = """
-            SELECT sc.*, s.name as student_name, s.class_name, e.exam_name
+            SELECT sc.*, s.name as student_name, s.class as class_name, e.exam_name
             FROM scores sc
             LEFT JOIN students s ON sc.student_id = s.student_id
             LEFT JOIN exams e ON sc.exam_id = e.exam_id
@@ -1842,7 +1842,7 @@ def get_exam_scores(exam_id: int, student_id: Optional[int] = None):
             query += " ORDER BY sc.total_score DESC"
 
             result = conn.execute(text(query), params)
-            scores = [dict(row) for row in result.fetchall()]
+            scores = [dict(row._mapping) for row in result.fetchall()]
 
             # 解析detail_scores JSON
             for score in scores:
@@ -1960,7 +1960,7 @@ def get_papers(exam_id: int):
                 """),
                 {"exam_id": exam_id}
             )
-            papers = [dict(row) for row in result.fetchall()]
+            papers = [dict(row._mapping) for row in result.fetchall()]
             return {"code": 1, "msg": "获取成功", "data": papers}
     except Exception as e:
         logger.error(f"获取试卷列表失败: {str(e)}")
@@ -1982,7 +1982,7 @@ def get_paper_details(paper_id: int):
                 """),
                 {"paper_id": paper_id}
             )
-            details = [dict(row) for row in result.fetchall()]
+            details = [dict(row._mapping) for row in result.fetchall()]
             return {"code": 1, "msg": "获取成功", "data": details}
     except Exception as e:
         logger.error(f"获取试卷详情失败: {str(e)}")

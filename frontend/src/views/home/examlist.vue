@@ -52,7 +52,7 @@
             <div class="exam-row">
               <div class="exam-actions">
                 <button @click="manageGrades(exam)" class="exam-action-btn grades-btn">
-                  成绩管理
+                  管理
                 </button>
                 <button @click="editExam(exam)" class="exam-action-btn edit-btn">
                   信息编辑
