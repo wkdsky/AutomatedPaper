@@ -1,24 +1,8 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import axios from 'axios'
 
-const questions = ref([
-  { id: 1, title: '主观题1' },
-  { id: 2, title: '主观题2' },
-])
 const students = ref([])
-const selectedId = ref(questions.value[0].id)
-
-const select = (id) => {
-  selectedId.value = id
-}
-
-const currentQuestion = computed(() =>
-  questions.value.find(q => q.id === selectedId.value) || {}
-)
-const currentStudent = computed(() =>
-  students.value.find(s => s.id === selectedId.value) || {}
-)
 
 onMounted(async () => {
   try {
