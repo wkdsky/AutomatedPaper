@@ -1,6 +1,5 @@
 """
-简化版考试管理系统后端API
-专为试卷图片分析和AI阅卷实验平台设计
+试卷图片分析和AI阅卷实验平台系统后端API
 
 功能包括：
 1. 考试管理 - 创建、查看、更新考试
@@ -9,8 +8,6 @@
 4. 成绩展示 - 模拟AI阅卷结果展示
 5. 扩展接口 - 为AI阅卷功能预留标准化接口
 
-作者：Claude Code
-日期：2025-11-25
 """
 
 
@@ -1222,6 +1219,25 @@ def create_question(exam_id: int, question: QuestionRequest):
             # 开启事务
             trans = conn.begin()
             try:
+                # 检查是否需要重排序
+                if question.question_order:
+                    existing = conn.execute(
+                        text("SELECT 1 FROM exam_questions WHERE exam_id = :exam_id AND question_order = :order"),
+                        {"exam_id": exam_id, "order": question.question_order}
+                    ).fetchone()
+                    
+                    if existing:
+                        # 如果位置被占用，将该位置及之后的题目序号+1
+                        conn.execute(
+                            text("""
+                            UPDATE exam_questions 
+                            SET question_order = question_order + 1 
+                            WHERE exam_id = :exam_id AND question_order >= :order
+                            ORDER BY question_order DESC
+                            """),
+                            {"exam_id": exam_id, "order": question.question_order}
+                        )
+
                 # 1. 插入题目信息
                 result = conn.execute(
                     text("""
@@ -1293,6 +1309,52 @@ def get_exam_questions(exam_id: int):
     except Exception as e:
         logger.error(f"获取考试题目失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取考试题目失败: {str(e)}")
+
+class QuestionUpdate(BaseModel):
+    question_type: Optional[str] = None
+    content: Optional[str] = None
+    score: Optional[float] = None
+    reference_answer: Optional[str] = None
+    scoring_rules: Optional[str] = None
+
+@app.put("/api/questions/{question_id}")
+def update_question(question_id: int, question: QuestionUpdate):
+    """更新题目信息"""
+    try:
+        with engine.connect() as conn:
+            # 构建动态更新语句
+            update_fields = []
+            update_params = {"question_id": question_id}
+
+            if question.question_type is not None:
+                update_fields.append("type = :type")
+                update_params["type"] = question.question_type
+            if question.content is not None:
+                update_fields.append("content = :content")
+                update_params["content"] = question.content
+            if question.score is not None:
+                update_fields.append("score = :score")
+                update_params["score"] = question.score
+            if question.reference_answer is not None:
+                update_fields.append("reference_answer = :reference_answer")
+                update_params["reference_answer"] = question.reference_answer
+            if question.scoring_rules is not None:
+                update_fields.append("scoring_rules = :scoring_rules")
+                update_params["scoring_rules"] = question.scoring_rules
+            
+            if not update_fields:
+                return {"code": 0, "msg": "没有更新字段"}
+
+            update_fields.append("updated_at = CURRENT_TIMESTAMP")
+            
+            query = f"UPDATE questions SET {', '.join(update_fields)} WHERE id = :question_id"
+            conn.execute(text(query), update_params)
+            conn.commit()
+
+            return {"code": 1, "msg": "更新成功"}
+    except Exception as e:
+        logger.error(f"更新题目失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"更新题目失败: {str(e)}")
 
 @app.post("/api/exams/{exam_id}/questions/reorder")
 def reorder_exam_questions(exam_id: int, question_ids: List[int] = Body(...)):

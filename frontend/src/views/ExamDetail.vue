@@ -49,274 +49,53 @@
           <!-- 学生信息 -->
           <el-tab-pane label="学生信息" name="students">
             <div class="tab-content">
-              <div class="tab-actions">
-                <el-button type="primary" @click="showFileImportDialog = true">
-                  <el-icon><Upload /></el-icon>
-                  从文件导入
-                </el-button>
-                <el-button type="success" @click="showBatchAddDialog = true">
-                  <el-icon><DocumentAdd /></el-icon>
-                  批量添加
-                </el-button>
-                <el-button type="info" @click="showAddExistingDialog = true">
-                  <el-icon><User /></el-icon>
-                  添加已录入学生
-                </el-button>
-                <el-button @click="fetchExamStudents">
-                  <el-icon><Refresh /></el-icon>
-                  刷新
-                </el-button>
-              </div>
-              
-              <div style="margin-bottom: 15px;">
-                <el-button 
-                  type="danger" 
-                  @click="removeBatchStudents" 
-                  :disabled="selectedExamStudents.length === 0"
-                >
-                  <el-icon><Delete /></el-icon>
-                  批量移除
-                </el-button>
-              </div>
-
-              <el-table 
-                ref="studentTableRef"
-                :data="examStudents" 
-                style="width: 100%" 
-                row-key="student_id"
-                @selection-change="handleExamStudentSelectionChange"
-                @row-dblclick="handleExamStudentDblClick"
-              >
-                <el-table-column type="selection" width="55" />
-                <el-table-column type="index" label="序号" width="80" />
-                <el-table-column label="学号" width="120">
-                  <template #default="scope">
-                    <el-input
-                      v-if="editingRowId === scope.row.student_id"
-                      v-model="scope.row.student_number"
-                      @blur="saveExamStudent(scope.row)"
-                      @keyup.enter="saveExamStudent(scope.row)"
-                      size="small"
-                    />
-                    <span v-else>{{ scope.row.student_number }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="班级" width="150">
-                  <template #default="scope">
-                    <el-input
-                      v-if="editingRowId === scope.row.student_id"
-                      v-model="scope.row.class_name"
-                      @blur="saveExamStudent(scope.row)"
-                      @keyup.enter="saveExamStudent(scope.row)"
-                      size="small"
-                    />
-                    <span v-else>{{ scope.row.class_name }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="姓名" width="120">
-                  <template #default="scope">
-                    <el-input
-                      v-if="editingRowId === scope.row.student_id"
-                      v-model="scope.row.name"
-                      @blur="saveExamStudent(scope.row)"
-                      @keyup.enter="saveExamStudent(scope.row)"
-                      size="small"
-                    />
-                    <span v-else>{{ scope.row.name }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="联系方式">
-                  <template #default="scope">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                      <el-input
-                        v-if="editingRowId === scope.row.student_id"
-                        v-model="scope.row.contact_info"
-                        @blur="saveExamStudent(scope.row)"
-                        @keyup.enter="saveExamStudent(scope.row)"
-                        size="small"
-                        style="margin-right: 10px;"
-                      />
-                      <span v-else style="margin-right: 10px;">{{ scope.row.contact_info }}</span>
-                      
-                      <el-icon class="drag-handle" style="cursor: move; color: #909399;"><Rank /></el-icon>
-                    </div>
-                  </template>
-                </el-table-column>
-              </el-table>
-              <div style="margin-top: 10px; font-size: 12px; color: #909399;">
-                提示：双击单元格可编辑，拖动右侧图标 <el-icon><Rank /></el-icon> 可调整顺序。
-              </div>
+              <StudentManager 
+                :exam-id="examId" 
+                @update:students="handleStudentsUpdate" 
+              />
             </div>
           </el-tab-pane>
 
           <!-- 参考答案和题目信息 -->
           <el-tab-pane label="参考答案和题目信息" name="questions">
             <div class="tab-content">
-              <div class="tab-actions">
-                <el-button type="primary" @click="showAddQuestionDialog = true">
-                  添加题目
-                </el-button>
-                <el-button type="success" @click="showImportQuestionDialog = true">
-                  <el-icon><Upload /></el-icon>
-                  从文件导入题目
-                </el-button>
-                <el-button @click="fetchQuestions">刷新</el-button>
-              </div>
-
-              <el-table :data="questions" style="width: 100%">
-                <el-table-column prop="question_number" label="题号" width="80" />
-                <el-table-column prop="question_title" label="题目标题" />
-                <el-table-column prop="question_type" label="题型" width="120">
-                  <template #default="scope">
-                    <el-tag :type="getQuestionTypeColor(scope.row.question_type)">
-                      {{ getQuestionTypeText(scope.row.question_type) }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="total_score" label="分值" width="80" />
-                <el-table-column prop="reference_answer" label="参考答案" show-overflow-tooltip />
-              </el-table>
+              <QuestionManager 
+                :exam-id="examId" 
+                @update:questions="handleQuestionsUpdate" 
+              />
             </div>
           </el-tab-pane>
 
           <!-- 学生作答管理 -->
           <el-tab-pane label="学生作答管理" name="images">
             <div class="tab-content">
-              <div class="tab-actions">
-                <el-button type="primary" @click="showUploadDialog = true">
-                  上传图片
-                </el-button>
-                <el-button @click="fetchImages">刷新</el-button>
-              </div>
-
-              <el-table :data="images" style="width: 100%">
-                <el-table-column prop="image_id" label="图片ID" width="100" />
-                <el-table-column prop="student_name" label="学生" width="120" />
-                <el-table-column prop="original_filename" label="文件名" />
-                <el-table-column prop="file_size" label="文件大小" width="120">
-                  <template #default="scope">
-                    {{ formatFileSize(scope.row.file_size) }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="upload_time" label="上传时间" width="180">
-                  <template #default="scope">
-                    {{ formatDate(scope.row.upload_time) }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="status" label="状态" width="100">
-                  <template #default="scope">
-                    <el-tag :type="getImageStatusType(scope.row.status)">
-                      {{ getImageStatusText(scope.row.status) }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-              </el-table>
+              <AnswerManager 
+                :exam-id="examId" 
+                :students="examStudents" 
+              />
             </div>
           </el-tab-pane>
 
           <!-- AI阅卷 -->
           <el-tab-pane label="AI阅卷" name="ai-grading">
             <div class="tab-content">
-              <div class="ai-grading-container">
-                <div class="ai-grading-header">
-                  <h3>AI阅卷控制台</h3>
-                  <p>使用人工智能对学生的答卷进行自动评分和分析</p>
-                </div>
-
-                <div class="ai-grading-actions">
-                  <el-button
-                    type="success"
-                    size="large"
-                    @click="triggerAIGrading"
-                    :loading="aiGradingInProgress"
-                  >
-                    <el-icon><Cpu /></el-icon>
-                    开始AI阅卷
-                  </el-button>
-                  <el-button @click="fetchScores">
-                    <el-icon><Refresh /></el-icon>
-                    刷新状态
-                  </el-button>
-                </div>
-
-                <div class="ai-grading-status" v-if="aiGradingInProgress">
-                  <el-progress
-                    :percentage="aiGradingProgress"
-                    :status="aiGradingStatus"
-                  />
-                  <p>{{ aiGradingMessage }}</p>
-                </div>
-
-                <div class="ai-grading-info" v-if="!aiGradingInProgress">
-                  <el-card>
-                    <template #header>
-                      <span>阅卷统计</span>
-                    </template>
-                    <div class="stats-grid">
-                      <div class="stat-item">
-                        <div class="stat-value">{{ getUngradedCount() }}</div>
-                        <div class="stat-label">待阅卷</div>
-                      </div>
-                      <div class="stat-item">
-                        <div class="stat-value">{{ getGradedCount() }}</div>
-                        <div class="stat-label">已完成</div>
-                      </div>
-                      <div class="stat-item">
-                        <div class="stat-value">{{ getTotalStudents() }}</div>
-                        <div class="stat-label">总学生数</div>
-                      </div>
-                    </div>
-                  </el-card>
-                </div>
-              </div>
+              <AIGradingConsole 
+                :exam-id="examId" 
+                :scores="scores"
+                :total-students="examStudents.length"
+                @refresh="fetchScores"
+              />
             </div>
           </el-tab-pane>
 
           <!-- 成绩管理 -->
           <el-tab-pane label="成绩管理" name="scores">
             <div class="tab-content">
-              <div class="tab-actions">
-                <el-button type="primary" @click="exportScores">
-                  导出成绩
-                </el-button>
-                <el-button @click="fetchScores">刷新</el-button>
-              </div>
-
-              <el-table :data="scores" style="width: 100%">
-                <el-table-column prop="student_name" label="学生" width="120" />
-                <el-table-column prop="total_score" label="得分" width="100">
-                  <template #default="scope">
-                    <span :style="{ color: getScoreColor(scope.row.total_score, scope.row.max_score) }">
-                      {{ scope.row.total_score || 0 }}
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="max_score" label="满分" width="100" />
-                <el-table-column label="得分率" width="100">
-                  <template #default="scope">
-                    {{ getScoreRate(scope.row.total_score, scope.row.max_score) }}%
-                  </template>
-                </el-table-column>
-                <el-table-column prop="grading_status" label="阅卷状态" width="120">
-                  <template #default="scope">
-                    <el-tag :type="getGradingStatusType(scope.row.grading_status)">
-                      {{ getGradingStatusText(scope.row.grading_status) }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="graded_at" label="阅卷时间" width="180">
-                  <template #default="scope">
-                    {{ formatDate(scope.row.graded_at) }}
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="100">
-                  <template #default="scope">
-                    <el-button size="small" @click="viewScoreDetail(scope.row)">
-                      详情
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+              <ScoreManager 
+                :scores="scores" 
+                :exam-id="examId" 
+                @refresh="fetchScores"
+              />
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -343,356 +122,20 @@
       </template>
     </el-dialog>
 
-    <!-- 图片上传对话框 -->
-    <el-dialog v-model="showUploadDialog" title="上传图片" width="500px">
-      <el-form :model="uploadForm" label-width="80px">
-        <el-form-item label="选择学生" required>
-          <el-select v-model="uploadForm.student_id" placeholder="选择学生" style="width: 100%">
-            <el-option
-              v-for="student in examStudents"
-              :key="student.student_id"
-              :label="`${student.name} (${student.student_number || '无学号'})`"
-              :value="student.student_id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="选择图片" required>
-          <el-upload
-            ref="uploadRef"
-            :auto-upload="false"
-            :limit="10"
-            multiple
-            accept=".jpg,.jpeg,.png,.bmp"
-          >
-            <el-button type="primary">选择文件</el-button>
-            <template #tip>
-              <div class="el-upload__tip">
-                只能上传jpg/png文件，且不超过10MB
-              </div>
-            </template>
-          </el-upload>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showUploadDialog = false">取消</el-button>
-        <el-button type="primary" @click="uploadImages">上传</el-button>
-      </template>
-    </el-dialog>
 
-    <!-- 添加题目对话框 -->
-    <el-dialog v-model="showAddQuestionDialog" title="添加题目" width="600px">
-      <el-form :model="newQuestion" label-width="100px">
-        <el-form-item label="题号" required>
-          <el-input-number v-model="newQuestion.question_number" :min="1" />
-        </el-form-item>
-        <el-form-item label="题型" required>
-          <el-select v-model="newQuestion.question_type" style="width: 100%">
-            <el-option label="选择题" value="choice" />
-            <el-option label="填空题" value="fill_blank" />
-            <el-option label="主观题" value="essay" />
-            <el-option label="计算题" value="calculation" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="题目标题">
-          <el-input v-model="newQuestion.question_title" />
-        </el-form-item>
-        <el-form-item label="参考答案">
-          <el-input
-            v-model="newQuestion.reference_answer"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入参考答案"
-          />
-        </el-form-item>
-        <el-form-item label="分值">
-          <el-input-number v-model="newQuestion.total_score" :min="1" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showAddQuestionDialog = false">取消</el-button>
-        <el-button type="primary" @click="addQuestion">添加</el-button>
-      </template>
-    </el-dialog>
 
-    <!-- 成绩详情对话框 -->
-    <el-dialog v-model="showScoreDetailDialog" title="成绩详情" width="600px">
-      <div v-if="scoreDetail">
-        <h3>学生：{{ scoreDetail.student_name }}</h3>
-        <p>总分：{{ scoreDetail.total_score }} / {{ scoreDetail.max_score }}</p>
 
-        <el-table :data="detailScores" style="width: 100%">
-          <el-table-column prop="questionNumber" label="题号" width="80" />
-          <el-table-column prop="score" label="得分" width="80" />
-          <el-table-column prop="maxScore" label="满分" width="80" />
-          <el-table-column prop="confidence" label="置信度" width="100">
-            <template #default="scope">
-              {{ (scope.row.confidence * 100).toFixed(1) }}%
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-    </el-dialog>
 
-    <!-- 文件导入对话框 -->
-    <el-dialog
-      v-model="showFileImportDialog"
-      title="从文件导入学生信息"
-      width="600px"
-      :close-on-click-modal="false"
-    >
-      <div style="text-align: center; padding: 40px;">
-        <el-upload
-          class="upload-demo"
-          drag
-          action=""
-          :auto-upload="false"
-          :on-change="handleFileChange"
-          :show-file-list="true"
-          accept=".xlsx,.xls,.txt,.csv"
-          style="margin-bottom: 20px;"
-        >
-          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-          <div class="el-upload__text">
-            将文件拖到此处，或<em>点击上传</em>
-          </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              可上传Excel (.xlsx, .xls)、文本文件 (.txt, csv)
-            </div>
-          </template>
-        </el-upload>
-
-        <div style="margin-top: 30px;">
-          <h4>支持的文件格式：</h4>
-          <ul style="list-style: none; padding: 0;">
-            <li>• Excel文件 (.xlsx, .xls) - 支持多列数据，列顺序：学号、班级、姓名、联系方式</li>
-            <li>• 文本文件 (.txt, .csv) - 支持制表符或逗号分隔</li>
-          </ul>
-        </div>
-      </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="showFileImportDialog = false">取消</el-button>
-          <el-button type="primary" @click="importStudentsFromFile" :disabled="!selectedFile">
-            开始导入
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
-
-    <!-- 添加已录入学生对话框 -->
-    <el-dialog
-      v-model="showAddExistingDialog"
-      title="添加已录入学生"
-      width="800px"
-      @open="fetchAvailableStudents"
-    >
-      <div style="margin-bottom: 15px; display: flex; gap: 10px;">
-        <el-input
-          v-model="searchKeyword"
-          placeholder="搜索姓名/学号/班级"
-          style="width: 300px;"
-          @keyup.enter="searchAvailableStudents"
-        >
-          <template #append>
-            <el-button @click="searchAvailableStudents"><el-icon><Search /></el-icon></el-button>
-          </template>
-        </el-input>
-        <el-button @click="fetchAvailableStudents">刷新</el-button>
-      </div>
-
-      <el-table
-        :data="availableStudents"
-        style="width: 100%"
-        height="400"
-        @selection-change="handleSelectionChange"
-        @row-dblclick="handleRowDblClick"
-      >
-        <el-table-column type="selection" width="55" />
-        
-        <el-table-column label="学号" width="120">
-          <template #default="scope">
-            <el-input
-              v-if="editingRowId === scope.row.student_id"
-              v-model="scope.row.student_number"
-              @blur="saveStudent(scope.row)"
-              @keyup.enter="saveStudent(scope.row)"
-              size="small"
-            />
-            <span v-else>{{ scope.row.student_number }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="班级" width="150">
-          <template #default="scope">
-            <el-input
-              v-if="editingRowId === scope.row.student_id"
-              v-model="scope.row.class_name"
-              @blur="saveStudent(scope.row)"
-              @keyup.enter="saveStudent(scope.row)"
-              size="small"
-            />
-            <span v-else>{{ scope.row.class_name }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="姓名" width="120">
-          <template #default="scope">
-            <el-input
-              v-if="editingRowId === scope.row.student_id"
-              v-model="scope.row.name"
-              @blur="saveStudent(scope.row)"
-              @keyup.enter="saveStudent(scope.row)"
-              size="small"
-            />
-            <span v-else>{{ scope.row.name }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="联系方式">
-          <template #default="scope">
-            <el-input
-              v-if="editingRowId === scope.row.student_id"
-              v-model="scope.row.contact_info"
-              @blur="saveStudent(scope.row)"
-              @keyup.enter="saveStudent(scope.row)"
-              size="small"
-            />
-            <span v-else>{{ scope.row.contact_info }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="操作" width="80" align="center">
-          <template #default="scope">
-            <el-button
-              type="danger"
-              icon="Delete"
-              circle
-              size="small"
-              @click.stop="deleteGlobalStudent(scope.row)"
-              title="从系统中彻底删除"
-            />
-          </template>
-        </el-table-column>
-      </el-table>
-      <div style="margin-top: 10px; font-size: 12px; color: #909399;">
-        提示：双击单元格可编辑学生信息，按回车或点击其他区域自动保存。
-      </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="showAddExistingDialog = false">取消</el-button>
-          <el-button type="primary" @click="addSelectedStudents" :disabled="selectedStudents.length === 0">
-            添加选中学生 ({{ selectedStudents.length }})
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
-
-    <!-- 批量添加学生对话框 -->
-    <el-dialog
-      v-model="showBatchAddDialog"
-      title="批量添加学生"
-      width="800px"
-      :close-on-click-modal="false"
-    >
-      <div style="margin-bottom: 15px;">
-        <el-alert
-          title="请输入学生信息，每行一个学生"
-          type="info"
-          description="格式：学号,班级,姓名,联系方式 (班级和联系方式为可选，用逗号分隔)"
-          :closable="false"
-        />
-      </div>
-
-      <el-input
-        v-model="batchAddText"
-        type="textarea"
-        :rows="8"
-        placeholder="示例：&#10;001,一班,张三,13800138000&#10;002,二班,李四,&#10;003,一班,王五,13900139000&#10;004,,赵六"
-      />
-
-      <div style="margin-top: 15px;">
-        <h4>输入格式说明：</h4>
-        <ul style="list-style: none; padding: 0; font-size: 13px; color: #666;">
-          <li>• 每行输入一个学生信息</li>
-          <li>• 使用逗号分隔：学号,班级,姓名,联系方式</li>
-          <li>• 班级和联系方式为可选项，但逗号位置需保留（如：004,,赵六）</li>
-          <li>• 必须包含学号和姓名</li>
-        </ul>
-      </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="showBatchAddDialog = false">取消</el-button>
-          <el-button type="primary" @click="batchAddStudents" :disabled="!batchAddText.trim()">
-            添加学生
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
-
-    <!-- 题目导入对话框 -->
-    <el-dialog
-      v-model="showImportQuestionDialog"
-      title="从文件导入题目"
-      width="600px"
-      :close-on-click-modal="false"
-    >
-      <div style="text-align: center; padding: 40px;">
-        <el-upload
-          class="upload-demo"
-          drag
-          action=""
-          :auto-upload="false"
-          :on-change="handleQuestionFileChange"
-          :show-file-list="true"
-          accept=".doc,.docx,.xlsx,.xls,.txt,.csv"
-          style="margin-bottom: 20px;"
-        >
-          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-          <div class="el-upload__text">
-            将文件拖到此处，或<em>点击上传</em>
-          </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              支持 Word (.doc, .docx)、Excel (.xlsx, .xls)、文本文件 (.txt, .csv)
-            </div>
-          </template>
-        </el-upload>
-
-        <div style="margin-top: 30px; text-align: left;">
-          <h4>题目导入格式说明 (Word/文本):</h4>
-          <ul style="list-style: none; padding: 0; font-size: 13px; color: #666;">
-            <li>• 每行为一道题目 (以回车换行区分)</li>
-            <li>• 字段间用 @@@ 分隔</li>
-            <li>• 格式: 题号@@@题型@@@题目内容@@@分值@@@参考答案@@@赋分规则</li>
-            <li>• 题号: 可为空 (自动排序)</li>
-            <li>• 题型: 可为空 (支持"选择题", "判断题"等)</li>
-            <li>• 题目内容: 必填</li>
-            <li>• 分值: 必填 (数字)</li>
-            <li>• 参考答案: 可为空</li>
-            <li>• 赋分规则: 可为空</li>
-            <li>• 包含图片的行将自动跳过</li>
-          </ul>
-        </div>
-      </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="showImportQuestionDialog = false">取消</el-button>
-          <el-button type="primary" @click="importQuestionsFromFile" :disabled="!selectedQuestionFile">
-            开始导入
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
+import StudentManager from './exam/StudentManager.vue'
+import QuestionManager from './exam/QuestionManager.vue'
+import AnswerManager from './exam/AnswerManager.vue'
+import AIGradingConsole from './exam/AIGradingConsole.vue'
+import ScoreManager from './exam/ScoreManager.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Upload, DocumentAdd, UploadFilled, Search, User, Refresh, Cpu, Delete, Rank } from '@element-plus/icons-vue'
@@ -705,52 +148,17 @@ const examId = route.params.exam_id
 const exam = ref(null)
 const activeTab = ref('students')
 const examStudents = ref([])
-const images = ref([])
 const questions = ref([])
 const scores = ref([])
-const allStudents = ref([])
-const availableStudents = ref([])
-const selectedStudents = ref([])
-const selectedExamStudents = ref([]) // Selected students in the exam student list
-const editingRowId = ref(null) // ID of the row currently being edited
-const studentTableRef = ref(null)
 
-// 对话框控制
 const showAddStudentDialog = ref(false)
-const showAddExistingDialog = ref(false)
-const showFileImportDialog = ref(false)
-const showBatchAddDialog = ref(false)
-const showImportQuestionDialog = ref(false)
-const showUploadDialog = ref(false)
-const showAddQuestionDialog = ref(false)
-const showScoreDetailDialog = ref(false)
-
-// 表单数据
 const selectedStudentId = ref('')
-const uploadForm = ref({ student_id: '' })
-const newQuestion = ref({
-  question_number: 1,
-  question_type: 'choice',
-  question_title: '',
-  reference_answer: '',
-  total_score: 4
-})
-const scoreDetail = ref(null)
-const detailScores = ref([])
+const newStudent = ref({})
+const allStudents = ref([])
 
-// 文件导入相关
-const selectedFile = ref(null)
-const selectedQuestionFile = ref(null)
-const batchAddText = ref('')
-const searchKeyword = ref('')
 
-// AI阅卷相关
-const aiGradingInProgress = ref(false)
-const aiGradingProgress = ref(0)
-const aiGradingStatus = ref('success')
-const aiGradingMessage = ref('')
 
-const uploadRef = ref()
+
 
 // 获取考试信息
 const fetchExam = async () => {
@@ -764,408 +172,20 @@ const fetchExam = async () => {
   }
 }
 
-// 获取考试学生
-const fetchExamStudents = async () => {
-  try {
-    const response = await axios.get(`http://localhost:8001/api/exams/${examId}/students`)
-    examStudents.value = response.data.data || []
-  } catch (error) {
-    console.error('获取考试学生失败:', error)
-    ElMessage.error('获取考试学生失败')
-  }
+const handleStudentsUpdate = (students) => {
+  examStudents.value = students
 }
 
-// 获取未分配到该考试的学生
-const fetchAvailableStudents = async () => {
-  try {
-    const params = {}
-    if (searchKeyword.value) {
-      params.search = searchKeyword.value
-    }
-    const response = await axios.get(`http://localhost:8001/api/exams/${examId}/available-students`, { params })
-    availableStudents.value = response.data.data || []
-  } catch (error) {
-    console.error('获取可用学生失败:', error)
-    ElMessage.error('获取可用学生失败')
-  }
+
+
+
+
+// 处理题目更新
+const handleQuestionsUpdate = (newQuestions) => {
+  questions.value = newQuestions
 }
 
-// 搜索可用学生
-const searchAvailableStudents = () => {
-  fetchAvailableStudents()
-}
 
-// 全选学生
-const selectAllStudents = () => {
-  selectedStudents.value = [...availableStudents.value]
-}
-
-// 清空选择
-const clearSelection = () => {
-  selectedStudents.value = []
-}
-
-// 处理表格选择变化
-const handleSelectionChange = (selection) => {
-  selectedStudents.value = selection
-}
-
-// 双击行进入编辑模式
-const handleRowDblClick = (row) => {
-  editingRowId.value = row.student_id
-}
-
-// 保存学生信息
-const saveStudent = async (student) => {
-  if (editingRowId.value !== student.student_id) return // Only save if currently editing this row
-  
-  // Validation
-  if (!student.name) {
-    ElMessage.error('姓名不能为空')
-    return
-  }
-  if (!student.student_number) {
-    ElMessage.error('学号不能为空')
-    return
-  }
-
-  try {
-    const response = await axios.put(`http://localhost:8001/api/students/${student.student_id}`, {
-      name: student.name,
-      student_number: student.student_number,
-      class_name: student.class_name,
-      contact_info: student.contact_info
-    })
-
-    if (response.data.code === 1) {
-      ElMessage.success('更新成功')
-      editingRowId.value = null // Exit editing mode
-    } else {
-      ElMessage.error(response.data.msg || '更新失败')
-    }
-  } catch (error) {
-    console.error('更新学生失败:', error)
-    if (error.response && error.response.data && error.response.data.detail) {
-       ElMessage.error(error.response.data.detail)
-    } else {
-       ElMessage.error('更新失败，可能是学号已存在')
-    }
-    // Refresh list to revert changes in UI if failed
-    fetchAvailableStudents()
-  }
-}
-
-// 全局删除学生
-const deleteGlobalStudent = async (student) => {
-  try {
-    const confirmed = await ElMessageBox.confirm(
-      '彻底删除确认',
-      `确定要从系统中彻底删除学生 "${student.name}" (${student.student_number}) 吗？\n警告：此操作不可恢复！将同时删除该学生在所有考试中的关联信息、答卷图片和成绩数据。`,
-      {
-        confirmButtonText: '确定彻底删除',
-        cancelButtonText: '取消',
-        type: 'error',
-        confirmButtonClass: 'el-button--danger'
-      }
-    )
-
-    if (!confirmed) return
-
-    const response = await axios.delete(`http://localhost:8001/api/students/${student.student_id}`)
-
-    if (response.data.code === 1) {
-      ElMessage.success('删除成功')
-      await fetchAvailableStudents() // Refresh list
-    } else {
-      ElMessage.error(response.data.msg || '删除失败')
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-        console.error('删除学生失败:', error)
-        ElMessage.error('删除学生失败')
-    }
-  }
-}
-
-// 添加选中的学生到考试
-const addSelectedStudents = async () => {
-  if (selectedStudents.value.length === 0) {
-    ElMessage.warning('请选择要添加的学生')
-    return
-  }
-
-  try {
-    const studentIds = selectedStudents.value.map(student => student.student_id)
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/add-existing-students`, studentIds, {
-      headers: { 'Content-Type': 'application/json' }
-    })
-
-    if (response.data.code === 1) {
-      ElMessage.success(`成功添加 ${response.data.data.added_count} 个学生`)
-      showAddExistingDialog.value = false
-      selectedStudents.value = []
-      await fetchExamStudents() // 刷新当前考试学生列表
-    } else {
-      ElMessage.error(response.data.msg || '添加失败')
-    }
-  } catch (error) {
-    console.error('添加学生失败:', error)
-    ElMessage.error('添加学生失败')
-  }
-}
-
-// 删除选中的学生
-const removeSelectedStudents = async () => {
-  if (selectedStudents.value.length === 0) {
-    ElMessage.warning('请选择要删除的学生')
-    return
-  }
-
-  try {
-    const confirmed = await ElMessageBox.confirm(
-      '删除确认',
-      `确定要删除这 ${selectedStudents.value.length} 名学生的考试信息吗？删除后这些学生在其他考试中的信息也会被清空。`,
-      {
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    if (!confirmed) return
-
-    const studentIds = selectedStudents.value.map(student => student.student_id)
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/students/remove-batch`, { student_ids: studentIds }, {
-      headers: { 'Content-Type': 'application/json' }
-    })
-
-    if (response.data.code === 1) {
-      ElMessage.success(`成功删除 ${response.data.data.removed_count} 名学生`)
-      showAddExistingDialog.value = false
-      selectedStudents.value = []
-      await fetchExamStudents() // 刷新当前考试学生列表
-    } else {
-      ElMessage.error(response.data.msg || '删除失败')
-    }
-  } catch (error) {
-    console.error('删除学生失败:', error)
-    ElMessage.error('删除学生失败')
-  }
-}
-
-// 获取所有学生
-const fetchAllStudents = async () => {
-  try {
-    const response = await axios.get('http://localhost:8001/api/students')
-    allStudents.value = response.data.data || []
-  } catch (error) {
-    console.error('获取所有学生失败:', error)
-  }
-}
-
-// 添加学生到考试
-const addStudentToExam = async () => {
-  try {
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/students`, selectedStudentId.value, {
-      headers: { 'Content-Type': 'application/json' }
-    })
-
-    if (response.data.code === 1) {
-      ElMessage.success('添加成功')
-      showAddStudentDialog.value = false
-      selectedStudentId.value = ''
-      await fetchExamStudents()
-    } else {
-      ElMessage.error(response.data.msg || '添加失败')
-    }
-  } catch (error) {
-    console.error('添加学生失败:', error)
-    ElMessage.error('添加学生失败')
-  }
-}
-
-// 移除学生
-const removeStudent = async (studentId) => {
-  try {
-    const response = await axios.delete(`http://localhost:8001/api/exams/${examId}/students/${studentId}`)
-
-    if (response.data.code === 1) {
-      ElMessage.success('移除成功')
-      await fetchExamStudents()
-    } else {
-      ElMessage.error(response.data.msg || '移除失败')
-    }
-  } catch (error) {
-    console.error('移除学生失败:', error)
-    ElMessage.error('移除学生失败')
-  }
-}
-
-// 处理考试学生列表选择变化
-const handleExamStudentSelectionChange = (selection) => {
-  selectedExamStudents.value = selection
-}
-
-// 批量移除学生
-const removeBatchStudents = async () => {
-  if (selectedExamStudents.value.length === 0) return
-
-  try {
-    const confirmed = await ElMessageBox.confirm(
-      '移除确认',
-      `确定要从本次考试中移除选中的 ${selectedExamStudents.value.length} 名学生吗？`,
-      {
-        confirmButtonText: '确定移除',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    if (!confirmed) return
-
-    const studentIds = selectedExamStudents.value.map(s => s.student_id)
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/students/remove-batch`, studentIds, {
-      headers: { 'Content-Type': 'application/json' }
-    })
-
-    if (response.data.code === 1) {
-      ElMessage.success(`成功移除 ${response.data.data.removed_count} 名学生`)
-      selectedExamStudents.value = [] // Clear selection
-      await fetchExamStudents()
-    } else {
-      ElMessage.error(response.data.msg || '移除失败')
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-        console.error('批量移除学生失败:', error)
-        ElMessage.error('批量移除学生失败')
-    }
-  }
-}
-
-// 获取图片列表
-const fetchImages = async () => {
-  try {
-    const response = await axios.get(`http://localhost:8001/api/exams/${examId}/images`)
-    images.value = response.data.data || []
-  } catch (error) {
-    console.error('获取图片列表失败:', error)
-  }
-}
-
-// 上传图片
-const uploadImages = async () => {
-  if (!uploadForm.value.student_id) {
-    ElMessage.error('请选择学生')
-    return
-  }
-
-  const files = uploadRef.value.uploadFiles
-  if (files.length === 0) {
-    ElMessage.error('请选择图片文件')
-    return
-  }
-
-  try {
-    const formData = new FormData()
-    formData.append('student_id', uploadForm.value.student_id)
-
-    files.forEach(file => {
-      formData.append('files', file.raw)
-    })
-
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/images`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-
-    if (response.data.code === 1) {
-      ElMessage.success(`上传成功，共 ${response.data.data.length} 个文件`)
-      showUploadDialog.value = false
-      uploadForm.value = { student_id: '' }
-      uploadRef.value.clearFiles()
-      await fetchImages()
-    } else {
-      ElMessage.error(response.data.msg || '上传失败')
-    }
-  } catch (error) {
-    console.error('上传图片失败:', error)
-    ElMessage.error('上传图片失败')
-  }
-}
-
-// 获取题目列表
-const fetchQuestions = async () => {
-  try {
-    const response = await axios.get(`http://localhost:8001/api/exams/${examId}/questions`)
-    questions.value = response.data.data || []
-  } catch (error) {
-    console.error('获取题目列表失败:', error)
-  }
-}
-
-// 添加题目
-const addQuestion = async () => {
-  try {
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/questions`, newQuestion.value)
-
-    if (response.data.code === 1) {
-      ElMessage.success('添加成功')
-      showAddQuestionDialog.value = false
-      newQuestion.value = {
-        question_number: questions.value.length + 1,
-        question_type: 'choice',
-        question_title: '',
-        reference_answer: '',
-        total_score: 4
-      }
-      await fetchQuestions()
-    } else {
-      ElMessage.error(response.data.msg || '添加失败')
-    }
-  } catch (error) {
-    console.error('添加题目失败:', error)
-    ElMessage.error('添加题目失败')
-  }
-}
-
-// 题目文件选择
-const handleQuestionFileChange = (file) => {
-  selectedQuestionFile.value = file.raw
-}
-
-// 导入题目
-const importQuestionsFromFile = async () => {
-  if (!selectedQuestionFile.value) {
-    ElMessage.error('请选择文件')
-    return
-  }
-
-  const formData = new FormData()
-  formData.append('file', selectedQuestionFile.value)
-
-  try {
-    ElMessage.info('正在导入题目，请稍候...')
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/import-questions`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-
-    if (response.data.code === 1) {
-      ElMessage.success(`题目导入成功！共导入 ${response.data.data.count} 道题目`)
-      showImportQuestionDialog.value = false
-      selectedQuestionFile.value = null
-      await fetchQuestions()
-    } else {
-      ElMessage.error(response.data.msg || '题目导入失败')
-    }
-  } catch (error) {
-    console.error('题目导入失败:', error)
-    if (error.response && error.response.data && error.response.data.detail) {
-      ElMessage.error(`导入失败: ${error.response.data.detail}`)
-    } else {
-      ElMessage.error('题目导入失败')
-    }
-  }
-}
 
 // 获取成绩列表
 const fetchScores = async () => {
@@ -1177,162 +197,9 @@ const fetchScores = async () => {
   }
 }
 
-// 触发AI阅卷
-const triggerAIGrading = async () => {
-  try {
-    ElMessage.info('正在启动AI阅卷...')
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/grade`)
 
-    if (response.data.code === 1) {
-      ElMessage.success(`AI阅卷完成！处理了 ${response.data.data.graded_count} 个学生`)
-      await fetchScores()
-    } else {
-      ElMessage.error(response.data.msg || 'AI阅卷失败')
-    }
-  } catch (error) {
-    console.error('AI阅卷失败:', error)
-    ElMessage.error('AI阅卷失败')
-  }
-}
 
-// 查看成绩详情
-const viewScoreDetail = (score) => {
-  scoreDetail.value = score
 
-  // 转换详细得分数据
-  if (score.detail_scores && typeof score.detail_scores === 'object') {
-    detailScores.value = Object.entries(score.detail_scores).map(([questionNumber, detail]) => ({
-      questionNumber,
-      score: detail.score || 0,
-      maxScore: detail.maxScore || 0,
-      confidence: detail.confidence || 0
-    }))
-  } else {
-    detailScores.value = []
-  }
-
-  showScoreDetailDialog.value = true
-}
-
-// 返回上一页
-const goBack = () => {
-  router.back()
-}
-
-// 工具函数
-const getStatusType = (status) => {
-  const statusMap = {
-    created: '',
-    uploading: 'warning',
-    processing: 'warning',
-    completed: 'success',
-    graded: 'success'
-  }
-  return statusMap[status] || ''
-}
-
-const getStatusText = (status) => {
-  const statusMap = {
-    created: '已创建',
-    uploading: '上传中',
-    processing: '处理中',
-    completed: '已完成',
-    graded: '已阅卷'
-  }
-  return statusMap[status] || '未知'
-}
-
-const getImageStatusType = (status) => {
-  const statusMap = {
-    uploaded: 'success',
-    processing: 'warning',
-    processed: 'success',
-    error: 'danger'
-  }
-  return statusMap[status] || ''
-}
-
-const getImageStatusText = (status) => {
-  const statusMap = {
-    uploaded: '已上传',
-    processing: '处理中',
-    processed: '已处理',
-    error: '错误'
-  }
-  return statusMap[status] || '未知'
-}
-
-const getQuestionTypeColor = (type) => {
-  const typeMap = {
-    choice: 'primary',
-    fill_blank: 'success',
-    essay: 'warning',
-    calculation: 'info'
-  }
-  return typeMap[type] || ''
-}
-
-const getQuestionTypeText = (type) => {
-  const typeMap = {
-    choice: '选择题',
-    fill_blank: '填空题',
-    essay: '主观题',
-    calculation: '计算题'
-  }
-  return typeMap[type] || '未知'
-}
-
-const getGradingStatusType = (status) => {
-  const statusMap = {
-    pending: 'warning',
-    processing: 'warning',
-    completed: 'success',
-    error: 'danger'
-  }
-  return statusMap[status] || ''
-}
-
-const getGradingStatusText = (status) => {
-  const statusMap = {
-    pending: '待处理',
-    processing: '处理中',
-    completed: '已完成',
-    error: '错误'
-  }
-  return statusMap[status] || '未知'
-}
-
-const getScoreColor = (score, maxScore) => {
-  if (!maxScore) return '#606266'
-  const rate = score / maxScore
-  if (rate >= 0.9) return '#67c23a'
-  if (rate >= 0.7) return '#e6a23c'
-  return '#f56c6c'
-}
-
-const getScoreRate = (score, maxScore) => {
-  if (!maxScore) return 0
-  return ((score / maxScore) * 100).toFixed(1)
-}
-
-const formatFileSize = (size) => {
-  if (!size) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  let unitIndex = 0
-  let fileSize = size
-
-  while (fileSize >= 1024 && unitIndex < units.length - 1) {
-    fileSize /= 1024
-    unitIndex++
-  }
-
-  return `${fileSize.toFixed(1)} ${units[unitIndex]}`
-}
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  return new Date(dateStr).toLocaleString('zh-CN')
-}
 
 // 格式化考试日期
 const formatExamDate = (dateStr) => {
@@ -1440,272 +307,31 @@ const showReferenceAnswerUpload = () => {
   ElMessage.info('请在"题目管理"标签页中上传参考答案文档')
 }
 
-// AI阅卷统计函数
-const getUngradedCount = () => {
-  return scores.value.filter(score => score.grading_status === 'pending').length
-}
 
-const getGradedCount = () => {
-  return scores.value.filter(score => score.grading_status === 'completed').length
-}
-
-const getTotalStudents = () => {
-  return examStudents.value.length
-}
 
 // 文件导入相关函数
 const handleFileChange = (file) => {
   selectedFile.value = file.raw
 }
 
-const importFile = async () => {
-  if (!selectedFile.value) {
-    ElMessage.error('请选择文件')
-    return
-  }
 
-  const formData = new FormData()
-  formData.append('file', selectedFile.value)
-
-  try {
-    ElMessage.info('正在导入文件，请稍候...')
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/import-students`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-
-    if (response.data.code === 1) {
-      ElMessage.success(`文件导入成功！共导入 ${response.data.data.imported_count} 个学生`)
-      showFileImportDialog.value = false
-      selectedFile.value = null
-      await fetchExamStudents()
-    } else {
-      ElMessage.error(response.data.msg || '文件导入失败')
-    }
-  } catch (error) {
-    console.error('文件导入失败:', error)
-    ElMessage.error('文件导入失败')
-  }
-}
-
-// 批量添加学生函数
-const batchAddStudents = async () => {
-  if (!batchAddText.value.trim()) {
-    ElMessage.error('请输入学生信息')
-    return
-  }
-
-  try {
-    // 解析输入的文本
-    const lines = batchAddText.value.trim().split('\n')
-    const students = []
-
-    lines.forEach(line => {
-      const parts = line.split(',').map(part => part.trim())
-      if (parts.length >= 1) { // Allow flexible length, validate later
-        students.push({
-          student_number: parts[0],
-          class_name: parts[1] || '',
-          name: parts[2] || '',
-          contact_info: parts[3] || ''
-        })
-      }
-    })
-
-    if (students.length === 0) {
-      ElMessage.error('未找到有效的学生信息')
-      return
-    }
-
-    ElMessage.info('正在批量添加学生，请稍候...')
-    const response = await axios.post(`http://localhost:8001/api/exams/${examId}/batch-add-students`, {
-      students: students
-    })
-
-    if (response.data.code === 1) {
-      const { added_count, errors } = response.data.data
-      
-      if (errors && errors.length > 0) {
-        const prefix = added_count > 0 ? `部分添加成功` : `批量添加失败`
-        const errorMsg = `${prefix}：成功 ${added_count} 人，失败 ${errors.length} 人。原因：${errors.join('; ')}`
-        
-        ElMessage.warning({
-          message: errorMsg,
-          duration: 5000,
-          showClose: true
-        })
-      } else if (added_count === 0) {
-        ElMessage.warning('未添加任何学生（可能是列表为空）')
-      } else {
-        ElMessage.success(`批量添加成功！共添加 ${added_count} 个学生`)
-      }
-      
-      showBatchAddDialog.value = false
-      batchAddText.value = ''
-      await fetchExamStudents()
-    } else {
-      ElMessage.error(response.data.msg || '批量添加失败')
-    }
-  } catch (error) {
-    console.error('批量添加失败:', error)
-    ElMessage.error('批量添加失败')
-  }
-}
 
 // 导出成绩函数
 const exportScores = () => {
   ElMessage.info('成绩导出功能开发中...')
 }
 
-// 双击考试学生列表行进入编辑模式
-const handleExamStudentDblClick = (row) => {
-  editingRowId.value = row.student_id
-}
 
-// 保存考试学生信息（实质是更新全局学生信息）
-const saveExamStudent = async (student) => {
-  if (editingRowId.value !== student.student_id) return
-  
-  // Validation
-  if (!student.name) {
-    ElMessage.error('姓名不能为空')
-    return
-  }
-  if (!student.student_number) {
-    ElMessage.error('学号不能为空')
-    return
-  }
 
-  try {
-    const response = await axios.put(`http://localhost:8001/api/students/${student.student_id}`, {
-      name: student.name,
-      student_number: student.student_number,
-      class_name: student.class_name,
-      contact_info: student.contact_info
-    })
 
-    if (response.data.code === 1) {
-      ElMessage.success('更新成功')
-      editingRowId.value = null
-    } else {
-      ElMessage.error(response.data.msg || '更新失败')
-    }
-  } catch (error) {
-    console.error('更新学生失败:', error)
-    if (error.response && error.response.data && error.response.data.detail) {
-       ElMessage.error(error.response.data.detail)
-    } else {
-       ElMessage.error('更新失败，可能是学号已存在')
-    }
-    // Refresh list to revert changes in UI if failed
-    fetchExamStudents()
-  }
-}
 
-// 初始化拖拽排序
-const initDragAndDrop = () => {
-  if (!studentTableRef.value) return
 
-  const tbody = studentTableRef.value.$el.querySelector('.el-table__body-wrapper tbody')
-  if (!tbody) return
 
-  // 标记已初始化，避免重复添加监听器
-  if (tbody.getAttribute('data-dnd-initialized')) return
-  tbody.setAttribute('data-dnd-initialized', 'true')
 
-  let draggingIndex = -1
-
-  tbody.addEventListener('dragstart', (e) => {
-    const tr = e.target.closest('tr')
-    if (!tr) return
-    
-    draggingIndex = tr.sectionRowIndex
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', draggingIndex)
-    tr.classList.add('dragging')
-    
-    // 这是一个 hack，确保拖拽图像包含整行
-    // setDragImage 在某些浏览器可能需要
-  })
-
-  tbody.addEventListener('dragend', (e) => {
-    const tr = e.target.closest('tr')
-    if (tr) tr.classList.remove('dragging')
-    draggingIndex = -1
-  })
-
-  tbody.addEventListener('dragover', (e) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  })
-
-  tbody.addEventListener('dragenter', (e) => {
-    const destTr = e.target.closest('tr')
-    // 确保目标是行，且正在拖拽中，且不是拖拽自身
-    if (!destTr || draggingIndex === -1 || destTr.sectionRowIndex === draggingIndex) return
-    
-    const destIndex = destTr.sectionRowIndex
-    
-    // 交换数据数组中的元素，实现实时视觉反馈
-    const items = [...examStudents.value]
-    const movedItem = items[draggingIndex]
-    items.splice(draggingIndex, 1)
-    items.splice(destIndex, 0, movedItem)
-    examStudents.value = items
-    
-    // 更新当前拖拽索引，因为行已经移动了
-    draggingIndex = destIndex
-  })
-
-  tbody.addEventListener('drop', async (e) => {
-    e.preventDefault()
-    if (draggingIndex !== -1) {
-      await reorderExamStudents()
-    }
-  })
-}
-
-// 确保每一行都是可拖拽的
-const ensureRowsDraggable = () => {
-  if (!studentTableRef.value) return
-  const trs = studentTableRef.value.$el.querySelectorAll('.el-table__body-wrapper tbody tr')
-  trs.forEach(tr => {
-    tr.setAttribute('draggable', 'true')
-  })
-}
-
-// 监听数据变化，重新应用 draggable 属性
-import { watch } from 'vue'
-watch(examStudents, () => {
-  nextTick(() => {
-    ensureRowsDraggable()
-  })
-}, { deep: true })
-
-// 调用API保存排序
-const reorderExamStudents = async () => {
-  try {
-    const studentIds = examStudents.value.map(s => s.student_id)
-    await axios.post(`http://localhost:8001/api/exams/${examId}/students/reorder`, studentIds)
-    // ElMessage.success('顺序已更新') // Optional: too annoying if popping up constantly
-  } catch (error) {
-    console.error('更新排序失败:', error)
-    ElMessage.error('更新排序失败')
-  }
-}
 
 onMounted(async () => {
   await fetchExam()
-  await fetchExamStudents()
-  await fetchAllStudents()
-  fetchImages()
-  fetchQuestions()
   fetchScores()
-  
-  // Init DnD after data is loaded
-  nextTick(() => {
-    initDragAndDrop()
-    ensureRowsDraggable()
-  })
 })
 </script>
 
@@ -1816,85 +442,12 @@ onMounted(async () => {
   margin-bottom: 20px;
 }
 
-/* AI阅卷相关样式 */
-.ai-grading-container {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
 
-.ai-grading-header {
-  text-align: center;
-}
 
-.ai-grading-header h3 {
-  margin: 0 0 8px 0;
-  color: #374151;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.ai-grading-header p {
-  margin: 0;
-  color: #6b7280;
-  font-size: 1rem;
-}
-
-.ai-grading-actions {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.ai-grading-status {
-  text-align: center;
-  padding: 20px;
-  background: #f9fafb;
-  border-radius: 8px;
-}
-
-.ai-grading-status p {
-  margin: 12px 0 0 0;
-  color: #374151;
-  font-weight: 500;
-}
-
-.ai-grading-info {
-  margin-top: 24px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
-  margin-top: 16px;
-}
-
-.stat-item {
-  text-align: center;
-  padding: 20px;
-  background: #f9fafb;
-  border-radius: 8px;
-  transition: all 0.2s;
-}
-
-.stat-item:hover {
-  background: #f3f4f6;
-  transform: translateY(-2px);
-}
-
-.stat-value {
-  font-size: 2rem;
-  font-weight: bold;
-  color: #3b82f6;
-  margin-bottom: 8px;
-}
-
-.stat-label {
-  font-size: 0.9rem;
-  color: #6b7280;
-  font-weight: 500;
+.truncate-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 </style>
