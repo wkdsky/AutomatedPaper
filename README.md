@@ -16,7 +16,7 @@
 AutomatedPaper/
 ├── backend/                # 后端代码目录
 │   ├── app_main.py         # 后端核心入口文件，集成所有路由
-│   ├── config.py           # 配置文件 (数据库, 上传路径等)
+│   ├── config.py           # 配置文件 (数据库配置等)
 │   ├── database.py         # 数据库连接初始化
 │   ├── requirements.txt    # Python依赖包列表
 │   └── routers/            # 路由模块 (按功能拆分)
@@ -44,38 +44,48 @@ AutomatedPaper/
 ```
 
 ## 关键功能代码导读
-本项目的核心逻辑集中在后端的 `app_main.py` 和前端的 `views/exam/` 目录下。以下是关键功能的代码出处对照，方便开发者快速定位和修改：
+本项目的核心逻辑集中在后端的 `routers/` 目录和前端的 `views/exam/` 目录下。以下是关键功能的代码出处对照，方便开发者快速定位和修改：
 
 ### 1. 考试管理模块
-*   **后端实现**: `backend/app_main.py`
+*   **后端实现**: `backend/routers/exams.py`
     *   `get_exams()`: 获取考试列表。
     *   `create_exam()`: 创建新考试。
     *   `update_exam()`: 更新考试信息（如状态流转）。
 *   **前端实现**: `frontend/src/views/home/examlist.vue` (考试列表页)
 
 ### 2. 学生信息与导入模块
-*   **后端实现**: `backend/app_main.py`
+*   **后端实现**: `backend/routers/students.py`
     *   `import_students_from_file()`: **核心函数**。使用 `pandas` 解析 Excel/CSV 或 Python 字符串处理解析 TXT，提取学生名单。
     *   `batch_add_students_to_exam()`: 处理批量添加及学号查重逻辑。
+    *   `get_available_students()`: 获取学生池中未分配到当前考试的学生。
 *   **前端实现**: `frontend/src/views/exam/StudentManager.vue`
     *   实现了文件上传组件与后端交互，以及学生列表的展示与管理。
 
 ### 3. 题目管理与文档解析模块
-*   **后端实现**: `backend/app_main.py`
+*   **后端实现**: `backend/routers/questions.py`
     *   `import_questions_from_file()`: **核心函数**。
         *   使用 `python-docx` 库解析 Word 文档，识别题目内容、分值和答案。
         *   使用 `pandas` 解析 Excel 题库。
         *   包含简单的正则表达式逻辑，用于提取题目结构（如 `@@@` 分隔符处理）。
     *   `reorder_exam_questions()`: 处理题目序号的重新排列。
+    *   `get_available_questions()`: 获取题库中未分配到当前考试的题目。
 *   **前端实现**: `frontend/src/views/exam/QuestionManager.vue`
-    *   提供题目预览、手动编辑和文件导入入口。
+    *   提供题目预览、手动编辑、文件导入以及从题库选择题目的入口。
 
-### 4. 待实现的 AI 核心模块
-以下文件为预留的接口或空壳，需要开发者填充逻辑：
-*   **AI 阅卷**: `frontend/src/views/exam/AIGradingConsole.vue` (前端)
-    *   需对接后端的 OCR 和 评分接口。
-*   **答卷分析**: `frontend/src/views/exam/AnswerManager.vue` (前端)
-    *   需实现图片上传后，调用后端 OpenCV 进行版面分析的逻辑。
+### 4. 答题卡图片管理模块
+*   **后端实现**: `backend/routers/answers.py`
+    *   `upload_exam_images()`: 接收前端上传的学生答卷图片，并保存到服务器。
+    *   `get_exam_images()`: 获取已上传的图片列表。
+*   **前端实现**: `frontend/src/views/exam/AnswerManager.vue`
+    *   提供图片上传组件，支持多文件选择和上传进度展示。
+
+### 5. AI 阅卷与成绩模块
+*   **后端实现**:
+    *   `backend/routers/grading.py`: `start_grading()` - 触发AI阅卷流程（OCR + 评分）。
+    *   `backend/routers/scores.py`: `get_exam_scores()` - 获取阅卷结果和统计数据。
+*   **前端实现**:
+    *   `frontend/src/views/exam/AIGradingConsole.vue`: 控制阅卷流程，展示进度。
+    *   `frontend/src/views/exam/ScoreManager.vue`: 展示成绩表格和详情。
 
 ## 数据库设计说明
 项目使用 MySQL 关系型数据库，核心表结构定义在 `database_schema.sql` 中。
@@ -139,9 +149,9 @@ AutomatedPaper/
    pip install -r requirements.txt
    ```
 4. **配置数据库连接**：
-   打开 `backend/app_main.py`，找到 `DATABASE_CONFIG` 变量，根据你的本地 MySQL 配置修改 `user` 和 `password`。
+   打开 `backend/config.py`，找到 `DATABASE_CONFIG` 变量，根据你的本地 MySQL 配置修改 `user` 和 `password`。
    ```python
-   # backend/database.py
+   # backend/config.py
    DATABASE_CONFIG = {
        'host': 'localhost',
        'user': 'root',
@@ -232,22 +242,7 @@ AutomatedPaper/
     *   `get_exam_scores`: 聚合查询数据库，计算每个学生的总分、排名等统计信息并返回。
     *   (可选) 实现导出 Excel 的接口。
 
-## 关键功能代码导读
-本项目的核心逻辑集中在后端的 `routers/` 目录和前端的 `views/exam/` 目录下。
 
-### 1. 考试管理模块
-*   **后端实现**: `backend/routers/exams.py`
-*   **前端实现**: `frontend/src/views/home/examlist.vue`
-
-### 2. 学生信息与导入模块
-*   **后端实现**: `backend/routers/students.py`
-    *   包含文件导入 (`pandas` 解析) 和批量添加逻辑。
-*   **前端实现**: `frontend/src/views/exam/StudentManager.vue`
-
-### 3. 题目管理与文档解析模块
-*   **后端实现**: `backend/routers/questions.py`
-    *   包含 Word/Excel 文档解析逻辑 (`python-docx`, `pandas`)。
-*   **前端实现**: `frontend/src/views/exam/QuestionManager.vue`
 
 
 

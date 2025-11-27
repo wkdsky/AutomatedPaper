@@ -8,10 +8,4 @@ DATABASE_CONFIG = {
     'database': 'exam_platform'
 }
 
-# 文件上传配置
-UPLOAD_DIR = "/home/wkd/aupappersys/uploads"
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
-# 确保上传目录存在
-os.makedirs(UPLOAD_DIR, exist_ok=True)

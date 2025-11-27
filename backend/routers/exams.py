@@ -8,7 +8,7 @@ import shutil
 import time
 
 from backend.database import engine
-from backend.config import UPLOAD_DIR
+
 
 # 配置日志
 logger = logging.getLogger(__name__)

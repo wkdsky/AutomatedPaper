@@ -11,7 +11,6 @@ import os
 import logging
 
 from backend.routers import auth, exams, students, questions, answers, grading, scores
-from backend.config import UPLOAD_DIR
 from backend.database import engine
 from sqlalchemy import text
 
@@ -50,15 +49,11 @@ def health_check():
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
 
-        # 检查上传目录
-        upload_accessible = os.path.exists(UPLOAD_DIR) and os.access(UPLOAD_DIR, os.W_OK)
-
         return {
             "code": 1,
             "msg": "系统正常",
             "data": {
                 "database": "connected",
-                "upload_directory": "accessible" if upload_accessible else "not_accessible",
                 "timestamp": datetime.now().isoformat()
             }
         }
